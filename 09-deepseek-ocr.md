@@ -10,6 +10,31 @@ Unblocks the thread deferred since July in [05-local-ai.md](05-local-ai.md): Dee
 can't run on stock llama.cpp (needs unmerged PR #20975). The working route is **vLLM on
 ROCm**, via a prebuilt gfx1151 image.
 
+## Usage — start here (2026-09-13)
+
+One command per document. `dspdf` is a fish function (`~/.config/fish/functions/dspdf.fish`,
+contents in [reference/config-files.md](reference/config-files.md)) that wraps `ocr_batch.py
+--combine` end to end: it starts the `vllm` container if it is stopped, OCRs the file inside
+it, and writes a single markdown file. Full day-to-day notes:
+[reference/ocr-usage.md](reference/ocr-usage.md).
+
+```fish
+dspdf book.pdf                 # -> book.md, next to the input
+dspdf book.pdf out/notes.md    # explicit destination
+dspdf -m both -f book.pdf      # both prompt modes (they fail in complementary places), overwrite
+```
+
+What changed on this date, all measured:
+
+- **Scripts moved: `~/ocr-test` → `~/Projects/play/ocr-test`.** Commands in this chapter that
+  passed the old workdir (`-w $HOME/ocr-test`) were stale and failed; fixed inline.
+- **First real book — a 58-page scanned book, image-only, `-m free --combine`: 127.1 s
+  total** (56.6 s startup, 1.2 s/page, chunk 16) → one 92 KB / 16.6k-word `.md`, 58/58 pages.
+  See **Performance** below — startup varies run to run (56.6 s here vs 80.7 s for the 26-page
+  manual).
+- **That PDF has no usable text layer: 0 of 58 pages, scanned exhaustively rather than sampled.**
+  So `--text-layer` has nothing to skip on scanned books; it only pays off on born-digital PDFs.
+
 ## Install
 
 ```fish
@@ -35,10 +60,12 @@ Verified inside the container: vLLM `0.22.1rc1`, torch `2.13.0a0+rocm7.14.0a`,
 
 ## Run
 
-Scripts live in `~/ocr-test/` (`make_test_image.py`, `run_ocr.py`, `ground_truth.txt`).
+Scripts live in `~/Projects/play/ocr-test/`: `ocr_batch.py` (the batch engine every path below
+ends up in, and what `dspdf` wraps) plus the test rig `make_test_image.py`, `run_ocr.py`,
+`ground_truth.txt`.
 
 ```fish
-podman exec --user 1000:1000 -w $HOME/ocr-test -e HOME=$HOME \
+podman exec --user 1000:1000 -w $HOME/Projects/play/ocr-test -e HOME=$HOME \
   -e OCR_MODE=free vllm bash -lc 'python run_ocr.py path/to/page.png'
 ```
 
@@ -51,12 +78,13 @@ llm = LLM(model="deepseek-ai/DeepSeek-OCR",
           logits_processors=[NGramPerReqLogitsProcessor])   # custom n-gram processor
 ```
 
-## Batch processing — the way to actually use this
+## Batch processing — the engine underneath
 
-`ocr_batch.py` takes files, directories, or both; `-r` recurses. One engine, many pages.
+`dspdf` wraps exactly this, once per document. Drive `ocr_batch.py` directly when you have a
+tree of files: it takes files, directories, or both, and `-r` recurses. One engine, many pages.
 
 ```fish
-podman exec --user 1000:1000 -w $HOME/ocr-test \
+podman exec --user 1000:1000 -w $HOME/Projects/play/ocr-test \
   -e HOME=$HOME -e PYTHONPATH=$HOME/.local/ocr-libs \
   vllm bash -lc 'python ocr_batch.py ~/scans -o ~/scans-text -m free'
 ```
@@ -99,7 +127,7 @@ Recreating the toolbox does **not** re-download anything: the image is a cached,
 made *inside* the container (a `pip install` into `/opt/venv`) are discarded.
 
 Always safe, because `$HOME` is bind-mounted: the model in `~/.cache/huggingface`
-(6.3 GB), the scripts in `~/ocr-test/`, and `~/.local/ocr-libs`.
+(6.3 GB), the scripts in `~/Projects/play/ocr-test/`, and `~/.local/ocr-libs`.
 
 PDFs are rasterised page by page, one chunk at a time, so a 500-page document never sits in
 RAM at once. Output is `<stem>-p001.md`, `<stem>-p002.md`, … or a single file with `--combine`.
@@ -143,9 +171,14 @@ the OCR reading plus the raw text layer in a fenced block, and can cross-check.
 | Engine startup, total | **~81 s** |
 | Generation — **single image** | ~13 s |
 | Generation — **batched** | **2.9 s/image** |
+| 58-page PDF, chunk 16, `--combine` (2026-09-13) | **127.1 s total** — 56.6 s startup, **1.2 s/page** |
 
 **Batching is a 4.5× win per image** — startup is paid once and vLLM overlaps the work.
 Measured: 6 images in 98.2 s (80.8 s startup + 17.4 s generation).
+
+Per-page cost keeps falling as the chunk grows: 1.2 s/page at chunk 16 (the book) vs 2.9 s/image
+for a 6-image run. **Startup is not fixed either** — 56.6 s for the book run against 80.7–80.8 s
+for the two runs above, same box, same image. Budget ~1–1.5 min before the first page appears.
 
 Extrapolated to 100 images: `81 + 100 × 2.9 ≈` **6.5 minutes**. One invocation per file
 would be ~2.8 hours; the whole difference is amortised startup.
@@ -175,7 +208,7 @@ compare parsed content instead.
 
 ## ⚠️ Accuracy — no single prompt mode captured the whole document
 
-Tested on a synthetic invoice with known ground truth (`~/ocr-test/ground_truth.txt`):
+Tested on a synthetic invoice with known ground truth (`~/Projects/play/ocr-test/ground_truth.txt`):
 
 | Content | `Free OCR.` | `<\|grounding\|>Convert the document to markdown.` |
 |---|---|---|
@@ -235,3 +268,8 @@ sufficient and excellent.
   are printed, and do not affect output.
 - `--group-add keep-groups` is required here — named groups (`--group-add render`) do not
   work, unlike the ComfyUI toolbox in [06-comfyui-rocm.md](06-comfyui-rocm.md).
+- **The container is handed the host's `$HOME`, `/tmp` and `/mnt` — and little else.** A path
+  outside those (`/var/tmp`, `/srv`, `/run`) resolves to the container's *own* filesystem, not
+  the host's: the run reports success, and the file is nowhere on the host. Keep inputs and
+  outputs under `$HOME`. Related: a file `/tmp` written by a plain `podman exec` is
+  **root-owned** on the host (`rm: Permission denied`) — remove it with `podman exec vllm rm -f`.

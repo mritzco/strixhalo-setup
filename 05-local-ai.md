@@ -216,6 +216,7 @@ One flag to watch: --ctx-size 32768 above is a reasonable starting point, not th
 1. Check devices
 ```fish
 llama-cli --list-devices 2>&1 | grep -i -E "vulkan|backend|error"
+```
 
 2. The ggml -Qi output is ambiguous — ggml-vulkan: Vulkan backend could be either an installed sub-component or an optional dependency that isn't actually pulled in. Need the full context to tell which:
 
@@ -292,6 +293,29 @@ llmv                                          # no image -> interactive chat
 - Chat mode: 3.8 uses the local GGUF; 3 auto-detects the cached qwen3-vl
   mmproj.
 
+**2026-09-13 — `llmv` no longer needs a hand-started `llmswap`.** It probes
+`/api/version` on 1234 (llama-swap-specific; a plain `llama-server` doesn't
+serve it) and, if nothing answers, runs the new `llmswap -d`: `setsid`+`nohup`
+in its own session so the endpoint outlives the terminal, returning only once
+llama-swap answers, logging to `~/.cache/llama-swap.log`. Foreground `llmswap`
+is byte-for-byte the same as before.
+
+Measured from cold (nothing running), same image, one question each:
+
+| path | 1st call | later calls |
+|---|---|---|
+| `llmv --model 3` (qwen3-vl MoE) | 12.7 s | **2.0 s** |
+| `llmv` (default 3.8, dense) | 29.3 s | 23.0 s |
+| `llama-mtmd-cli` one-shot, no daemon | 10.0 s | ~10 s **every time** |
+
+So the daemon wins from the second image on, at a ~3 s premium on the first.
+Two things to know: the config's `on_startup` preload of `qwen3-coder` fires on
+every autostart and is then swapped out by the first vision request (inside that
+12.7 s), and the dense default `3.8` is slow *warm* as well — that is image
+prefill, not loading. Use `--model 3` for quick questions.
+`POST /api/models/unload` frees a model immediately; `ttl: 1800` does it after
+30 min idle.
+
 ### Nathan fork + MTP (speed path, NOT in llama-swap)
 
 - Fork built from source at `~/src/nathan-llama.cpp/build-vk/bin/llama-server`
@@ -326,3 +350,72 @@ llmv                                          # no image -> interactive chat
 All recipes, flags, results and the quality battery live in the registry
 repo: `$HOME/Projects/strixhalo` (published as
 `github.com/mritzco/strixhalo-recipes`).
+
+---
+
+## 2026-09-13 — llama-swap starts empty; `-p` to warm one model
+
+Day-to-day: [reference/llm-usage.md](reference/llm-usage.md),
+[reference/vision-usage.md](reference/vision-usage.md).
+
+**Change.** `hooks.on_startup.preload` in `~/.config/llama-swap/config.yaml` went
+from `[qwen3-coder]` to `[]`, so **llama-swap now starts with nothing loaded** —
+the right default when the plan is DeepSeek in the cloud on battery, and models
+are configured when actually used. Warming moved into the launcher:
+
+```fish
+llmswap                    # nothing loaded (default)
+llmswap -p qwen3-coder     # warm one model in the background
+llmswap -d -p qwen3-vl     # detached + warm
+llmswap -p none            # explicit nothing
+```
+
+- The default is one line at the top of `llmswap.fish`: `set -l default_preload ''`.
+- Warming hits `/upstream/<model>/health`, which starts the upstream and runs
+  **no inference**; it is fired detached (own session) because in the foreground
+  case `llama-swap` owns the terminal and the function never regains control.
+  A bad model id 404s and is reported — needs `curl -f`, since without it curl
+  treats 404 as success and the failure is silent.
+- Method note: `/upstream/<model>/health` looks like it *did* trigger a load the
+  first time it was tested, but that was omp's own request racing the curl. The
+  log line to check is always `Request ... "POST /v1/chat/completions"`.
+
+**Measured consequence for `llmv`** (invoice scan, cold = nothing running):
+
+| path | 1st call | later |
+|---|---|---|
+| `llmv --model 3` | **7.8 s** | **2.1 s** |
+| `llmv` (default 3.8) | 29.3 s | 23.0 s |
+| `llama-mtmd-cli`, no daemon | 10.0 s | ~10 s every time |
+
+Dropping the startup preload made the first `llmv` call *faster* than the
+no-daemon path (7.8 s vs 10.0 s): the coder preload used to load and then be
+swapped straight out by the first vision request.
+
+### ⚠️ Correction to the lineup table above
+
+The 2026-09-07 table lists `qwen3-instruct`, which is **not in the config**
+(and never was, as of today's file). Actual keys in
+`~/.config/llama-swap/config.yaml`:
+
+| key | model | notes |
+|---|---|---|
+| `qwen3-coder` | Qwen3-Coder-30B-A3B (UD-Q4_K_XL) | daily agent driver |
+| `qwen3-vl` | Qwen3-VL-30B-A3B | fast MoE vision (~18 G) |
+| `qwen3.8-flash-next` | Qwen3.8-Flash-Next 125B-A6B (UD-IQ4_XS) | strongest; thinking, needs `--reasoning-effort` |
+| `qwen3.8-flash-uncensored` | Flash-Next Uncensored (IQ4_XS) + mmproj + MTP | runs the fork's llama-server |
+| `qwen3.8-27b-vl` | Qwen3.8-27B dense Q8_0 + mmproj | dense vision (~29 G), slow prefill |
+
+`instruct` still exists as a *separate* `llm` (manual, port 8080) key — it is not
+a llama-swap model. Read the config file as the source of truth:
+
+```fish
+python3 -c "import yaml,pathlib;print(list(yaml.safe_load((pathlib.Path.home()/'.config/llama-swap/config.yaml').read_text())['models']))"
+```
+
+### ⚠️ Clients load models whether you preload or not
+
+With the endpoint up, **omp requests `qwen3-coder` within seconds** — llama-swap
+logs `POST /v1/chat/completions ... "omp/18.1.14"`, load 5.8 s. "Nothing
+resident" therefore also means the client is not asking; llama-swap itself now
+loads nothing on start, but that is not the whole story.

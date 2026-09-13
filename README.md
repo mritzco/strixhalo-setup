@@ -37,7 +37,7 @@ is dated, and history doesn't get rewritten. Current-state material lives in
 | 6 | [ComfyUI](06-comfyui-rocm.md) — image & video via ROCm toolbox | 2026-07-17 | ✅ |
 | 7 | [Apps & viewers](07-apps-viewers.md) — calculator, image, 360° | 2026-08-01 | ✅ |
 | 8 | [Resilience](08-resilience.md) — OOM hardening | — | ⚠️ **proposed, not applied** |
-| 9 | [DeepSeek-OCR](09-deepseek-ocr.md) — vLLM on ROCm/gfx1151 | 2026-08-07 | ✅ working, limits documented |
+| 9 | [DeepSeek-OCR](09-deepseek-ocr.md) — vLLM on ROCm/gfx1151 | 2026-08-07 | ✅ working, limits documented · `dspdf` front door added 2026-09-13 |
 
 ## Reference
 
@@ -45,7 +45,9 @@ Current state, safe to overwrite:
 
 - [config-files.md](reference/config-files.md) — contents of every config file touched
 - [llm-usage.md](reference/llm-usage.md) — running local LLMs day to day
+- [vision-usage.md](reference/vision-usage.md) — asking questions about an image day to day
 - [comfyui-usage.md](reference/comfyui-usage.md) — image/video generation day to day
+- [ocr-usage.md](reference/ocr-usage.md) — PDFs/images → markdown day to day
 - [niri.md](reference/niri.md) — compositor how-to notes
 - [nvim.md](reference/nvim.md) — editor keymaps, treesitter parsers, learning vim
 
