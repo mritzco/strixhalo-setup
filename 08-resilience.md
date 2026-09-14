@@ -38,8 +38,8 @@ some app crashes  ──►  systemd-coredump starts writing a core
 The tell in the journal is a cluster of **SIGBUS** crashes — mmap-backed pages that couldn't
 be faulted in once memory was gone.
 
-You run exactly this workload. GLM-4.5-Air is 64 GB, and lesson 02 in [`../ai/`](../ai/README.md)
-has you building and running things alongside it.
+You run exactly this workload. GLM-4.5-Air is 64 GB, and the engine lessons have you
+building and running things alongside it.
 
 ## The zram wrinkle — read before copying the source config
 
@@ -139,7 +139,7 @@ sudo systemctl daemon-reload
 
 ## Source
 
-Adapted from [external/px13-fedora-strix-halo.md](../external/px13-fedora-strix-halo.md) —
-a third-party writeup of the *same hardware* on **Fedora 44 + GNOME 50**. The memory analysis
-transfers; the distro specifics (dnf, DKMS, `gnome-shell`/`gdm` process names) do not, and have
-been adapted above.
+Adapted from [Daily-driving Fedora on a ProArt PX13](https://www.reddit.com/r/ProArt_PX13/comments/1u96idk/dailydriving_fedora_on_a_proart_px13_strix_halo/)
+by **u/neuromacmd** — a third-party writeup of the *same hardware* on **Fedora 44 + GNOME 50**.
+The memory analysis transfers; the distro specifics (dnf, DKMS, `gnome-shell`/`gdm` process
+names) do not, and have been adapted above.

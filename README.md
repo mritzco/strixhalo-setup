@@ -4,8 +4,6 @@ How this laptop was configured, what broke, and how it was fixed. Append-only: e
 is dated, and history doesn't get rewritten. Current-state material lives in
 [`reference/`](#reference), which *is* overwritten.
 
-[← Handbook index](../README.md)
-
 ---
 
 ## The machine
@@ -75,7 +73,7 @@ Carried over from how this log was already written, and worth keeping:
 
 MIT — see [LICENSE](LICENSE). Copy the configs and commands freely.
 
-Chapters 2 and 8 adapt material from a third-party article about the same hardware on
-Fedora (by **neuromacmd**, saved verbatim on this machine, not my writing). Those sections
-keep their attribution inline and that article is **not** covered by the license above —
-credit it if you reuse it.
+Chapters 2 and 8 adapt material from a third-party writeup of the same hardware on Fedora —
+[Daily-driving Fedora on a ProArt PX13](https://www.reddit.com/r/ProArt_PX13/comments/1u96idk/dailydriving_fedora_on_a_proart_px13_strix_halo/)
+by **u/neuromacmd**. Those sections keep their attribution inline and that article is **not**
+covered by the license above — credit it if you reuse it.

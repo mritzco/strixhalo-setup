@@ -2,7 +2,6 @@
 
 **Date:** 2026-07-15 → 07-23 · the Strix Halo GTT config and the whole local LLM stack.
 Day-to-day usage: [reference/llm-usage.md](reference/llm-usage.md).
-Learning the internals: [../ai/](../ai/README.md).
 
 [← Display rotation](04-display-rotation.md) · [Setup index](README.md) · [Next: ComfyUI →](06-comfyui-rocm.md)
 

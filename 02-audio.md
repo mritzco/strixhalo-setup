@@ -95,7 +95,8 @@ If those controls are present, mainline has caught up and you can drop the fork.
 
 ## See also
 
-- [external/px13-fedora-strix-halo.md](../external/px13-fedora-strix-halo.md) — someone
-  else's writeup of the same hardware on Fedora; different distro, same amps, and it covers
-  the post-silence crackle/pop fix (WirePlumber idle-suspend + SoundWire runtime PM).
+- [Daily-driving Fedora on a ProArt PX13](https://www.reddit.com/r/ProArt_PX13/comments/1u96idk/dailydriving_fedora_on_a_proart_px13_strix_halo/)
+  by u/neuromacmd — someone else's writeup of the same hardware on Fedora; different
+  distro, same amps, and it covers the post-silence crackle/pop fix (WirePlumber
+  idle-suspend + SoundWire runtime PM).
 - Upstream patches: <https://github.com/ftoleedo/px13-audio-fix>
