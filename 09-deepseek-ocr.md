@@ -258,8 +258,8 @@ sufficient and excellent.
   `~/.docker/config.json` holds **stale Docker Hub tokens**; podman sends them and Hub
   rejects the auth instead of falling back to anonymous. Workaround: `--authfile` pointing
   at a file containing `{}`. Permanent fix: `podman logout docker.io`, or re-`docker login`.
-- **`podman exec` runs as root with `HOME=/root`.** The host home *is* mounted at
-  `$HOME`, but a plain `exec` downloads models into container storage instead of the
+- **`podman exec` runs as root with `HOME=/root`.** The host home *is* bind-mounted at its
+  real path, but a plain `exec` downloads models into container storage instead of the
   shared cache, and any files it writes to your home are root-owned. Always pass
   `--user 1000:1000 -e HOME=$HOME`.
 - **Default workdir is `/opt`, which uid 1000 cannot write.** Always pass `-w`.

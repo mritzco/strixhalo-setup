@@ -63,8 +63,8 @@ cross-check and not ground truth. `dspdf` deliberately does not expose it. Measu
 
 ```fish
 podman exec --user 1000:1000 -e HOME=$HOME vllm bash -lc "python - <<'EOF'
-import pypdfium2 as pdfium
-d = pdfium.PdfDocument('$HOME/Downloads/books/book.pdf')
+import os, pypdfium2 as pdfium
+d = pdfium.PdfDocument(os.path.expanduser('~/Downloads/books/book.pdf'))
 n = len(d)
 print(sum(1 for i in range(n) if d[i].get_textpage().get_text_range().strip()), 'of', n, 'pages have text')
 EOF"

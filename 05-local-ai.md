@@ -348,7 +348,7 @@ prefill, not loading. Use `--model 3` for quick questions.
   (observed TG 60 → 2 t/s).
 
 All recipes, flags, results and the quality battery live in the registry
-repo: `$HOME/Projects/strixhalo` (published as
+repo: `~/Projects/strixhalo` (published as
 `github.com/mritzco/strixhalo-recipes`).
 
 ---

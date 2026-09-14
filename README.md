@@ -51,8 +51,6 @@ Current state, safe to overwrite:
 - [niri.md](reference/niri.md) — compositor how-to notes
 - [nvim.md](reference/nvim.md) — editor keymaps, treesitter parsers, learning vim
 
-
-
 ---
 
 ## House style

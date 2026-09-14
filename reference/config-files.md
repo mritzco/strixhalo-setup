@@ -263,6 +263,11 @@ rebuilds the internal server and **stops every running model**, so the next requ
 # IMPORTANT: `proxy: http://127.0.0.1:${PORT}` forces IPv4. llama-server binds
 # 127.0.0.1 (IPv4 only), but llama-swap otherwise dials localhost -> [::1] (IPv6)
 # and fails with "connection refused" / "Server unavailable". Keep this on every model.
+#
+# Paths in `cmd` are literal and machine-specific (shown here as /path/to/...).
+# llama-swap expands only its own macros (${PORT}, ${MODEL_ID}): `${HOME}` is
+# rejected at startup with `unknown macro`, and neither `$HOME` nor `~` is ever
+# seen by a shell, so the real absolute path must be written out.
 
 healthCheckTimeout: 600   # big models (GLM 68G) take a while to load from disk
 logLevel: info
