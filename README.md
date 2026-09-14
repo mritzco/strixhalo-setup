@@ -68,3 +68,14 @@ Carried over from how this log was already written, and worth keeping:
 - **Don't paste config contents into a chapter.** Put them in
   [reference/config-files.md](reference/config-files.md) and link. Duplicated config is how
   the original log ended up with two copies of `config.fish` disagreeing with each other.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE). Copy the configs and commands freely.
+
+Chapters 2 and 8 adapt material from a third-party article about the same hardware on
+Fedora (by **neuromacmd**, saved verbatim on this machine, not my writing). Those sections
+keep their attribution inline and that article is **not** covered by the license above —
+credit it if you reuse it.
