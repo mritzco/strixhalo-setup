@@ -37,6 +37,7 @@ is dated, and history doesn't get rewritten. Current-state material lives in
 | 8 | [Resilience](08-resilience.md) — OOM hardening | — | ⚠️ **proposed, not applied** |
 | 9 | [DeepSeek-OCR](09-deepseek-ocr.md) — vLLM on ROCm/gfx1151 | 2026-08-07 | ✅ working, limits documented · `dspdf` front door added 2026-09-13 |
 | 10 | [Crash forensics](10-crash-forensics.md) — silent resets: crashwatch, panic/lockup capture | 2026-09-24 | ✅ capture stack installed, no recurrence yet |
+| 11 | [Session lock](11-session-lock.md) — lock on suspend, and the "ads" that were a browser extension | 2026-09-24 | ✅ verified over a suspend/resume |
 
 ## Reference
 

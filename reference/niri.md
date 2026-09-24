@@ -85,3 +85,22 @@ Manual: https://manuals.plus/ducky/ok-m-65-mechanical-keyboard-manual
 
 Fallback: if the hardware layer isn't enough, add `"DKOKM65 BT3 Keyboard"` to
 kanata's `linux-dev-names-include` and define a corrective layer.
+
+---
+
+## Lock screen (manual, and on suspend) — 2026-09-24
+
+niri has no built-in lock, and `niri-screensaver` (installed) is a *screensaver*, not a locker. The
+lock is Noctalia's.
+
+- **Manual:** `Mod+ALT+L` -> `qs -c noctalia-shell ipc call lockScreen lock` (in `cfg/keybinds.kdl`).
+- **On suspend, including lid close:** `swayidle -w before-sleep ~/.config/niri/scripts/lock-before-sleep.sh`,
+  spawned from `cfg/autostart.kdl`. Requires the `swayidle` package. `spawn-at-startup` only runs at
+  niri start, so to arm it in the current session:
+
+```fish
+niri msg action spawn-sh -- "swayidle -w before-sleep /home/itzco/.config/niri/scripts/lock-before-sleep.sh"
+pgrep -a swayidle
+```
+
+Why it is needed and how to test it: [ch. 11](../11-session-lock.md).

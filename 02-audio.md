@@ -8,6 +8,18 @@
 
 ## Solution A (current): stock kernel + `px13-audio-fix`
 
+### TL;DR (the short path)
+
+```fish
+sudo pacman -S --needed dkms
+git clone https://github.com/ftoleedo/px13-audio-fix.git ~/px13-audio-fix
+cd ~/px13-audio-fix
+# apply the local patch first - without it the installer exits 1 silently (see "Local patch")
+bash install-durable.sh
+sudo /usr/local/lib/px13-soundwire-recover.sh   # load the new module (or reboot)
+bash ~/px13-audio-fix/check-audio.sh            # must be all PASS
+```
+
 TI's rewritten TAS2783 driver landed in mainline **7.1**, so the patched-kernel route is no
 longer needed. What upstream still misses is userspace-shaped:
 
@@ -131,18 +143,23 @@ sudo bash ~/crash-forensics/restore-quirks-ucm.sh      # restores the quirks UCM
 ```
 Backups + md5s of the pre-migration UCM files: `~/crash-forensics/audio-backup/` (`BEFORE.txt`).
 
-### Open item
-
-`BOOT_ORDER` in `/etc/default/limine` still puts `*px13` first, so px13 remains the default
-entry. Once 7.2.3 has been used for a few days (audio + suspend), flip it:
+### Default kernel - switched 2026-09-24
 
 ```fish
 # /etc/default/limine
-BOOT_ORDER="*, *px13, *lts, *fallback, Snapshots"
+BOOT_ORDER="*linux-cachyos, *px13, *lts, *fallback, Snapshots"
 ```
 ```fish
-sudo limine-update
+sudo limine-update && sudo limine-list      # linux-cachyos first, px13 second
 ```
+
+Pattern note: `BOOT_ORDER` is tried in order, **first match wins**, and the first entry becomes the
+preselected one. `*linux-cachyos` cannot match `linux-cachyos-px13` or `-lts` (they do not end with
+it), whereas a bare `*` would also match px13 and defeat the purpose.
+
+Verified after a reboot: `uname -r` -> `7.2.3-1-cachyos`, audio all PASS, `crashwatch` active,
+`linux-cachyos-px13` still selectable as the fallback entry.
+Revert: `sudo cp /etc/default/limine.bak-pre-default-flip /etc/default/limine && sudo limine-update`.
 
 ---
 

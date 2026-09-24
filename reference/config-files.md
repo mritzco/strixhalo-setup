@@ -308,3 +308,54 @@ models:
 # DeepSeek-R1-70B removed 2026-07-16 — dense/slow locally; use DeepSeek via cloud subscription instead.
 ```
 
+---
+
+### ~/.config/niri/scripts/lock-before-sleep.sh
+
+Added 2026-09-24 - see [ch. 11](../11-session-lock.md). Run by `swayidle` on `before-sleep`.
+
+```sh
+#!/bin/sh
+# Lock the Noctalia lock screen before the machine suspends, and don't let the
+# system sleep until the session is actually locked.
+#
+# Why: Noctalia's own `lockOnSuspend` only fires for suspends that Noctalia
+# starts (idle timer, session menu, launcher). A lid close is handled by
+# systemd-logind, which Noctalia does not listen to -> resumes unlocked.
+#
+# Used by: ~/.config/niri/cfg/autostart.kdl
+#   swayidle -w before-sleep /home/itzco/.config/niri/scripts/lock-before-sleep.sh
+# (swayidle listens for logind's PrepareForSleep and holds a delay inhibitor
+#  until this script exits.)
+
+qs -c noctalia-shell ipc call lockScreen lock
+
+# Wait for ext-session-lock to be up (logind tracks it as LockedHint), max ~2 s.
+i=0
+while [ "$i" -lt 20 ]; do
+	loginctl show-session "${XDG_SESSION_ID:-auto}" -p LockedHint 2>/dev/null | grep -q 'yes' && exit 0
+	i=$((i + 1))
+	sleep 0.1
+done
+
+# Fallback: give the shell a moment to raise the surface before we freeze.
+sleep 0.5
+exit 0
+```
+
+### ~/.config/niri/cfg/autostart.kdl
+
+The third `spawn-sh-at-startup` line is the 2026-09-24 addition.
+
+```kdl
+// ────────────── Startup Applications ──────────────
+// https://github.com/YaLTeR/niri/wiki/Configuration:-Miscellaneous#spawn-sh-at-startup
+
+    spawn-sh-at-startup "qs -c noctalia-shell"
+    spawn-sh-at-startup "kanata -c ~/.config/kanata/kanata.kbd"
+
+    // Lock before any suspend (incl. lid close, which logind handles and Noctalia
+    // does not see), so a resume lands on the lock screen instead of the desktop.
+    // Added 2026-09-24; requires `swayidle`.
+    spawn-sh-at-startup "swayidle -w before-sleep /home/itzco/.config/niri/scripts/lock-before-sleep.sh"
+```

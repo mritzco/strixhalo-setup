@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-24 · **Status:** ✅ capture stack installed and verified (no recurrence yet)
 
-[← DeepSeek-OCR](09-deepseek-ocr.md) · [Setup index](README.md)
+[← DeepSeek-OCR](09-deepseek-ocr.md) · [Setup index](README.md) · [Next: Session lock →](11-session-lock.md)
 
 ---
 
