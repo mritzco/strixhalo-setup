@@ -15,7 +15,7 @@
 |---|---|---|
 | 1 | `/etc/systemd/coredump.conf.d/10-cap.conf` | `ProcessSizeMax=2G`, `ExternalSizeMax=2G` (systemd's 64-bit default is **32G**) |
 | 2 | `/etc/systemd/system/systemd-coredump@.service.d/10-memcap.conf` | `MemoryHigh=1G`, `MemoryMax=2G` |
-| 3 | `/etc/systemd/zram-generator.conf.d/10-size.conf` | `zram-size = min(ram / 2, 32 * 1024)` → **32 GiB** (stock: `zram-size = ram` = 124.9 GB) |
+| 3 | `/etc/systemd/zram-generator.conf.d/10-size.conf` | `zram-size = min(ram / 2, 32 * 1024)` → **32 GiB** (stock: `zram-size = ram` = 124.9 GB). Live device re-created 2026-09-24 18:41: `swapon --show` → 32G, `zramctl` → 32G |
 | 4 | `pacman -S earlyoom` + `/etc/default/earlyoom` | args below |
 
 ### Deviation from the proposal, and why
@@ -58,8 +58,14 @@ bash ~/crash-forensics/oom-hardening/check.sh   # one-screen status of all four 
 - **The zram device only changes size when it is re-created** (zram-generator runs at boot). Either
   reboot, or force it — safe whenever swap usage is tiny:
   `sudo swapoff /dev/zram0 && sudo systemctl restart systemd-zram-setup@zram0.service`
-- **Restart earlyoom after the swap total changes** — it works from the totals it read at startup:
-  `sudo systemctl restart earlyoom`.
+- **Restart earlyoom only *after* the new swap device is up.** It reads `MemTotal`/`SwapTotal`
+  once at startup and never again. Restarting it during the re-creation window captures
+  `swap total: 0 MiB`, which makes "swap free <= 25 %" permanently true and silently turns the
+  two-condition guard into a RAM-only one (seen 2026-09-24). Order matters:
+  `swapon --show` -> `sudo systemctl restart earlyoom` -> `journalctl -u earlyoom -n 6`.
+- `swapoff /dev/zram0` can print `swapoff failed: Invalid argument` **and still have done its job**
+  — systemd then re-creates the device when the setup unit restarts. Read `swapon --show`, not the
+  exit code.
 - Cores larger than 2G are now **not processed** (no stack trace). That is the trade for not letting
   a core dump eat the machine; `ProcessSizeMax=0` would disable coredumps entirely instead.
 - Thresholds are a starting point, not a law — validate under load
