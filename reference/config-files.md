@@ -263,11 +263,6 @@ rebuilds the internal server and **stops every running model**, so the next requ
 # IMPORTANT: `proxy: http://127.0.0.1:${PORT}` forces IPv4. llama-server binds
 # 127.0.0.1 (IPv4 only), but llama-swap otherwise dials localhost -> [::1] (IPv6)
 # and fails with "connection refused" / "Server unavailable". Keep this on every model.
-#
-# Paths in `cmd` are literal and machine-specific (shown here as /path/to/...).
-# llama-swap expands only its own macros (${PORT}, ${MODEL_ID}): `${HOME}` is
-# rejected at startup with `unknown macro`, and neither `$HOME` nor `~` is ever
-# seen by a shell, so the real absolute path must be written out.
 
 healthCheckTimeout: 600   # big models (GLM 68G) take a while to load from disk
 logLevel: info
@@ -292,17 +287,17 @@ models:
     ttl: 1800
 
   "qwen3.8-flash-next":
-    cmd: /usr/bin/llama-server --model /path/to/models/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf --alias qwen3.8-flash-next -ngl 999 --jinja -fa on -c 131072 --cache-type-k q8_0 --cache-type-v q8_0 -b 8192 -ub 2048 -np 1 --reasoning-effort medium --reasoning-budget 2048 --port ${PORT}
+    cmd: /usr/bin/llama-server --model /home/itzco/models/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf --alias qwen3.8-flash-next -ngl 999 --jinja -fa on -c 131072 --cache-type-k q8_0 --cache-type-v q8_0 -b 8192 -ub 2048 -np 1 --reasoning-effort medium --reasoning-budget 2048 --port ${PORT}
     proxy: http://127.0.0.1:${PORT}
     ttl: 1800
 
   "qwen3.8-flash-uncensored":
-    cmd: /path/to/src/myhacsint-llama.cpp/build-vulkan/bin/llama-server --model /path/to/models/Qwen3.8-Flash-Next-Uncensored-GGUF/IQ4_XS/Qwen3.8-Flash-Next-Uncensored.IQ4_XS.gguf --alias qwen3.8-flash-uncensored -md /path/to/models/Qwen3.8-Flash-Next-Uncensored-GGUF/MTP-unsloth/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf --mmproj /path/to/models/Qwen3.8-Flash-Next-Uncensored-GGUF/mmproj/Qwen3.8-Flash-Next-Uncensored.mmproj-f16.gguf --image-min-tokens 1024 -ngl 999 -fa on --jinja -c 131072 --cache-type-k f16 --cache-type-v f16 -b 2048 -ub 1024 --n-cpu-moe 0 --load-mode mmap --tensor-read-lazy auto --no-repack --no-host --fit on --reasoning-effort medium --reasoning-preserve --temp 1.0 --top-k 20 --top-p 0.95 --spec-type draft-mtp --spec-draft-adaptive --spec-draft-n-min 0 --spec-draft-n-max 5 --spec-draft-p-min 0.75 --spec-draft-type-k f16 --spec-draft-type-v f16 --port ${PORT}
+    cmd: /home/itzco/src/myhacsint-llama.cpp/build-vulkan/bin/llama-server --model /home/itzco/models/Qwen3.8-Flash-Next-Uncensored-GGUF/IQ4_XS/Qwen3.8-Flash-Next-Uncensored.IQ4_XS.gguf --alias qwen3.8-flash-uncensored -md /home/itzco/models/Qwen3.8-Flash-Next-Uncensored-GGUF/MTP-unsloth/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf --mmproj /home/itzco/models/Qwen3.8-Flash-Next-Uncensored-GGUF/mmproj/Qwen3.8-Flash-Next-Uncensored.mmproj-f16.gguf --image-min-tokens 1024 -ngl 999 -fa on --jinja -c 131072 --cache-type-k f16 --cache-type-v f16 -b 2048 -ub 1024 --n-cpu-moe 0 --load-mode mmap --tensor-read-lazy auto --no-repack --no-host --fit on --reasoning-effort medium --reasoning-preserve --reasoning-budget 2048 --temp 1.0 --top-k 20 --top-p 0.95 --spec-type draft-mtp --spec-draft-adaptive --spec-draft-n-min 0 --spec-draft-n-max 5 --spec-draft-p-min 0.75 --spec-draft-type-k f16 --spec-draft-type-v f16 --port ${PORT}
     proxy: http://127.0.0.1:${PORT}
     ttl: 1800
 
   "qwen3.8-27b-vl":
-    cmd: /usr/bin/llama-server --model /path/to/models/Qwen3.8-27B-GGUF/Qwen3.8-27B-Q8_0.gguf --mmproj /path/to/models/Qwen3.8-27B-GGUF/mmproj-F16.gguf -ngl 999 --jinja -c 131072 -fa on --alias qwen3.8-27b-vl --port ${PORT}
+    cmd: /usr/bin/llama-server --model /home/itzco/models/Qwen3.8-27B-GGUF/Qwen3.8-27B-Q8_0.gguf --mmproj /home/itzco/models/Qwen3.8-27B-GGUF/mmproj-F16.gguf -ngl 999 --jinja -c 131072 -fa on --alias qwen3.8-27b-vl --port ${PORT}
     proxy: http://127.0.0.1:${PORT}
     ttl: 1800   
 # DeepSeek-R1-70B removed 2026-07-16 — dense/slow locally; use DeepSeek via cloud subscription instead.
