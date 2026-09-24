@@ -403,19 +403,34 @@ zram-size = min(ram / 2, 32 * 1024)
 
 ### /etc/default/earlyoom
 
-Read by earlyoom.service; thresholds must be read against the *capped* zram size.
+Read by earlyoom.service. Tuned from two pressure tests — see ch. 8.
 ```ini
 # /etc/default/earlyoom -- read by earlyoom.service (EnvironmentFile)
 #
-# -m 5  : fire when free RAM < 5%  (~6 GB of 124 GB)
-# -s 25 : ... AND free swap < 25%. Swap here is zram (compressed RAM), so 25% of the
-#         new 32 GiB zram ~= 8 GiB of resident compressed pages = "deep into swapping".
-#         Both conditions are required by design, so a pinned model (GTT pages are not
-#         swappable, swap stays untouched) will NOT trip it -- only real thrash does.
-#         Validate these numbers under load: journalctl -u earlyoom -f
-# -r 3600: report memory state hourly
-# --avoid: never kill these (adapted to this box: niri/sddm/pipewire, not gnome/gdm)
-# --prefer: kill these first
-EARLYOOM_ARGS="-r 3600 -m 5 -s 25 --avoid '^(niri|sddm|pipewire|pipewire-pulse|wireplumber|sshd|systemd|dbus-broker)$' --prefer '^(chrome|chromium|electron|node|code)$'"
+# Tuned 2026-09-24 from a deliberate pressure test (handbook ch. 8). Original config was
+#   -m 5 -s 25 --prefer '^(chrome|chromium|electron|node|code)$'
+# and the test showed exactly why that is wrong on this box:
+#
+#   * selection defaults to oom_score, and Chromium/VS Code set oom_score_adj=300 on their
+#     renderers -> earlyoom killed SIX small helpers (57, 40, 14, 11, 103, 87 MiB) plus two
+#     VS Code language servers before it got to the actual cause, a 42 GiB process
+#   * `--prefer` made that worse: it biases the choice towards those very helpers
+#   * node's main thread reports comm "MainThread", so `|node)` never matched the hog anyway
+#
+# Now: --sort-by-rss picks the *biggest* process (the thing that actually caused the pressure),
+# no --prefer so nothing overrides that, and thresholds raised so it fires while there is still
+# headroom to act. `both conditions must hold` keeps a pinned model (GTT is not swappable, swap
+# stays untouched) from ever tripping it -- that half is verified.
+#
+# -m 10 : fire when free RAM < 10%  (~12 GB of 124 GB)
+# -s 25 : ... AND free swap < 25%. Swap is zram here; 25% of 32 GiB ~= 8 GiB resident
+#         compressed pages = "deep into swapping".
+# -r 3600: hourly memory report (leave it, it is your only breadcrumb trail)
+# --avoid: never kill these (niri/sddm/pipewire/ssh -- never the session, never the audio)
+#
+# Optional knobs, not enabled:
+#   -n   desktop notification on each kill (needs `systembus-notify`)
+#   -g   kill the whole process group of the victim (e.g. the entire browser instead of one tab)
+EARLYOOM_ARGS="-r 3600 -m 10 -s 25 --sort-by-rss --avoid '^(niri|sddm|pipewire|pipewire-pulse|wireplumber|sshd|systemd|dbus-broker)$'"
 ```
 
