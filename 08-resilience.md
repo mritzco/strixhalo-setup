@@ -1,11 +1,78 @@
 # 8. Resilience — OOM hardening for a shared-memory box
 
-> ## ⚠️ STATUS: NOT APPLIED
-> Verified on **2026-08-07**: no `/etc/systemd/coredump.conf.d/`, no coredump service
-> drop-in, no `/etc/default/earlyoom`, `earlyoom` not installed or enabled.
-> This chapter is a **proposal**, not a record. Everything below is untested on this machine.
+> ## ✅ STATUS: APPLIED 2026-09-24
+> Applied by `~/crash-forensics/oom-hardening/install.sh` (idempotent; `install.sh --revert` undoes
+> it). Everything below the **Applied** section is the original 2026-08-07 proposal, kept as the
+> reasoning that led here.
 
 [← Apps & viewers](07-apps-viewers.md) · [Setup index](README.md) · [Next: DeepSeek-OCR →](09-deepseek-ocr.md)
+
+---
+
+## Applied — 2026-09-24
+
+| # | File | Value |
+|---|---|---|
+| 1 | `/etc/systemd/coredump.conf.d/10-cap.conf` | `ProcessSizeMax=2G`, `ExternalSizeMax=2G` (systemd's 64-bit default is **32G**) |
+| 2 | `/etc/systemd/system/systemd-coredump@.service.d/10-memcap.conf` | `MemoryHigh=1G`, `MemoryMax=2G` |
+| 3 | `/etc/systemd/zram-generator.conf.d/10-size.conf` | `zram-size = min(ram / 2, 32 * 1024)` → **32 GiB** (stock: `zram-size = ram` = 124.9 GB) |
+| 4 | `pacman -S earlyoom` + `/etc/default/earlyoom` | args below |
+
+### Deviation from the proposal, and why
+
+The proposal said `-m 6 -s 6`. Both conditions must be true, and earlyoom evaluates them against the
+totals it prints at startup — from its own journal on this box:
+
+```
+mem total: 127937 MiB, user mem total: 123869 MiB, swap total: 127936 MiB
+sending SIGTERM when mem avail <=  5.00% and swap free <= 25.00%,
+```
+
+With zram sized to RAM, "swap free ≤ 6 %" means **93 GB of zram in use** — it would never fire.
+So the zram cap (item 3) is not cosmetic: it is what makes a swap threshold mean anything
+(25 % of 32 GiB ≈ 8 GiB free). Final args:
+
+```
+EARLYOOM_ARGS="-r 3600 -m 5 -s 25 --avoid '^(niri|sddm|pipewire|pipewire-pulse|wireplumber|sshd|systemd|dbus-broker)$' --prefer '^(chrome|chromium|electron|node|code)$'"
+```
+
+### Verified 2026-09-24, under a real load
+
+With a local model loaded (~70 GB pinned in GTT):
+
+```
+Mem:  total 124Gi  used 78Gi  free 0.7Gi  buff/cache 46Gi  available 46Gi
+Swap: total 124Gi  used 0
+```
+
+RAM went low, swap stayed **untouched**, and earlyoom correctly did *not* fire — GTT pages are not
+swappable, so a pinned model alone must never trigger a kill. That is exactly what the `-m` **and**
+`-s` conjunction is for.
+
+```fish
+bash ~/crash-forensics/oom-hardening/check.sh   # one-screen status of all four items
+```
+
+### ⚠️ Gotchas
+
+- **The zram device only changes size when it is re-created** (zram-generator runs at boot). Either
+  reboot, or force it — safe whenever swap usage is tiny:
+  `sudo swapoff /dev/zram0 && sudo systemctl restart systemd-zram-setup@zram0.service`
+- **Restart earlyoom after the swap total changes** — it works from the totals it read at startup:
+  `sudo systemctl restart earlyoom`.
+- Cores larger than 2G are now **not processed** (no stack trace). That is the trade for not letting
+  a core dump eat the machine; `ProcessSizeMax=0` would disable coredumps entirely instead.
+- Thresholds are a starting point, not a law — validate under load
+  (`sudo journalctl -u earlyoom -f` while loading your biggest model) and raise them if earlyoom
+  reports little margin with just a model loaded.
+- One killer only: `systemd-oomd` stays **disabled** (it already was). Don't enable both.
+
+### Rollback
+
+```fish
+sudo bash ~/crash-forensics/oom-hardening/install.sh --revert
+sudo pacman -Rns earlyoom        # optional; the revert leaves the package installed
+```
 
 ---
 

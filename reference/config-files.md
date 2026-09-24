@@ -359,3 +359,63 @@ The third `spawn-sh-at-startup` line is the 2026-09-24 addition.
     // Added 2026-09-24; requires `swayidle`.
     spawn-sh-at-startup "swayidle -w before-sleep /home/itzco/.config/niri/scripts/lock-before-sleep.sh"
 ```
+
+---
+
+## OOM hardening (ch. 8, applied 2026-09-24)
+
+### /etc/systemd/coredump.conf.d/10-cap.conf
+
+Cap the 32G systemd default.
+```ini
+[Coredump]
+# systemd's 64-bit default is 32G (coredump.conf(5)): a crashing app under memory
+# pressure therefore tries to write a 32 GB core -- that is what turned an app crash
+# into a session-killing OOM (handbook ch. 8). Cap it.
+ProcessSizeMax=2G
+ExternalSizeMax=2G
+```
+
+### /etc/systemd/system/systemd-coredump@.service.d/10-memcap.conf
+
+Contain the core-writing worker.
+```ini
+[Service]
+# Contain the process that writes the core. If the core is huge, *this* unit gets
+# killed instead of the memory being taken from your session.
+MemoryHigh=1G
+MemoryMax=2G
+```
+
+### /etc/systemd/zram-generator.conf.d/10-size.conf
+
+Overrides the stock `zram-size = ram` (124.9 GB). Drop-ins beat the single config file, per zram-generator.conf(5).
+```ini
+[zram0]
+# Stock /usr/lib/systemd/zram-generator.conf says `zram-size = ram` -> 124.9 GB here.
+# zram is *compressed RAM*, not capacity: at that size the kernel happily pushes
+# ~30 GB of data into RAM and thrashes for minutes before anything fires (observed
+# 2026-09-24: 27 page-allocation failures, 36 GB of RAM held by zram, 18 MB free in
+# the normal zone). Upstream's own recommended ceiling for a big-RAM box is 32 GiB
+# (zram-generator.conf(5)); this expression evaluates to exactly that here.
+zram-size = min(ram / 2, 32 * 1024)
+```
+
+### /etc/default/earlyoom
+
+Read by earlyoom.service; thresholds must be read against the *capped* zram size.
+```ini
+# /etc/default/earlyoom -- read by earlyoom.service (EnvironmentFile)
+#
+# -m 5  : fire when free RAM < 5%  (~6 GB of 124 GB)
+# -s 25 : ... AND free swap < 25%. Swap here is zram (compressed RAM), so 25% of the
+#         new 32 GiB zram ~= 8 GiB of resident compressed pages = "deep into swapping".
+#         Both conditions are required by design, so a pinned model (GTT pages are not
+#         swappable, swap stays untouched) will NOT trip it -- only real thrash does.
+#         Validate these numbers under load: journalctl -u earlyoom -f
+# -r 3600: report memory state hourly
+# --avoid: never kill these (adapted to this box: niri/sddm/pipewire, not gnome/gdm)
+# --prefer: kill these first
+EARLYOOM_ARGS="-r 3600 -m 5 -s 25 --avoid '^(niri|sddm|pipewire|pipewire-pulse|wireplumber|sshd|systemd|dbus-broker)$' --prefer '^(chrome|chromium|electron|node|code)$'"
+```
+

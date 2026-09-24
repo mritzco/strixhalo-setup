@@ -18,6 +18,7 @@ sysctl kernel.hardlockup_panic kernel.nmi_watchdog kernel.panic    # 1 1 10
 pgrep -a swayidle                                                 # lock-on-suspend armed
 pactl list sinks short                                            # ...HiFi__Speaker__sink present
 journalctl -t crashwatch -b 0 -o cat | grep -i bootcheck          # previous boot ended cleanly?
+bash ~/crash-forensics/oom-hardening/check.sh                        # coredump caps / zram size / earlyoom
 ```
 
 ## Audio — [ch. 2](02-audio.md)
@@ -54,6 +55,17 @@ sudo pacman -Sy && sudo pacman -Spu                   # those two must NOT appea
 
 # kernel-update ritual
 sudo pacman -Syu && bash ~/px13-audio-fix/check-audio.sh    # DKMS rebuilds; verify audio after
+```
+
+## Memory & OOM — [ch. 8](08-resilience.md)
+
+```fish
+bash ~/crash-forensics/oom-hardening/check.sh                    # all four items, one screen
+sudo journalctl -u earlyoom -f                                   # watch it while loading a big model
+free -g; swapon --show; zramctl                                  # raw view
+sudo swapoff /dev/zram0 && sudo systemctl restart systemd-zram-setup@zram0.service   # apply a new zram size now
+sudo systemctl restart earlyoom                                  # after a swap-total change
+sudo bash ~/crash-forensics/oom-hardening/install.sh --revert    # undo the hardening
 ```
 
 ## Session lock — [ch. 11](11-session-lock.md)

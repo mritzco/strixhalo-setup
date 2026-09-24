@@ -34,7 +34,7 @@ is dated, and history doesn't get rewritten. Current-state material lives in
 | 5 | [Local AI](05-local-ai.md) — GTT memory, Vulkan, llama.cpp, llama-swap | 2026-07-15 | ✅ |
 | 6 | [ComfyUI](06-comfyui-rocm.md) — image & video via ROCm toolbox | 2026-07-17 | ✅ |
 | 7 | [Apps & viewers](07-apps-viewers.md) — calculator, image, 360° | 2026-08-01 | ✅ |
-| 8 | [Resilience](08-resilience.md) — OOM hardening | — | ⚠️ **proposed, not applied** |
+| 8 | [Resilience](08-resilience.md) — OOM hardening: coredump cap, zram 32 GiB, earlyoom | 2026-09-24 | ✅ applied + verified under load |
 | 9 | [DeepSeek-OCR](09-deepseek-ocr.md) — vLLM on ROCm/gfx1151 | 2026-08-07 | ✅ working, limits documented · `dspdf` front door added 2026-09-13 |
 | 10 | [Crash forensics](10-crash-forensics.md) — silent resets: crashwatch, panic/lockup capture | 2026-09-24 | ✅ capture stack installed, no recurrence yet |
 | 11 | [Session lock](11-session-lock.md) — lock on suspend, and the "ads" that were a browser extension | 2026-09-24 | ✅ verified over a suspend/resume |
