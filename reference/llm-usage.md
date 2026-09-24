@@ -113,10 +113,43 @@ hf cache rm model/<user>/<repo>          # remove one
 hf cache prune                           # remove half-finished downloads
 ```
 
+## Which local model for what (measured 2026-09-24)
+
+Objective comparison — 20 hidden spec-compliance cases, a 4-bug hunt, a runnable `/proc` script —
+plus sequential throughput. Harnesses: `~/model-eval/eval.py`, `speed.py`, `vision.py`; raw
+responses in `~/model-eval/out/`.
+
+| | `qwen3-coder` | `qwen3.8-flash-next` | `…flash-uncensored` | `qwen3.8-27b-vl` |
+|---|---|---|---|---|
+| spec compliance (20 cases) | 19/20 | **20/20** | **20/20** | not measured¹ |
+| bug hunt (4 real bugs) | 3 | **4** | **4** | — |
+| runnable `/proc` script | ❌ | ✅ | ✅ | — |
+| throughput (400 tok, warm) | **77.0 t/s** | 22.5 t/s | 35.0 t/s | 7.4 t/s |
+| cold-ish load | 7.5 s | 20.5 s | 17.0 s | (warm) |
+
+¹ `27b-vl` is dense Q8 at 7.4 t/s — a long answer needs ~18 min, so a 420 s client timeout saw
+nothing. It is a *vision* model, not a worker: all three VL-capable models read a generated test
+image exactly (`vision.py`), `qwen3-vl` fastest at 9.9 s end-to-end.
+
+- **Careful work → a flash model, not coder.** Coder lost all three tasks: `"1H30M"` raised
+  `ValueError` (no case folding), and its `/proc` script whitespace-split `/proc/<pid>/stat`
+  (a `comm` with a space shifts the field index — it printed an 11 TB RSS) *and* printed KB as MB.
+  Both flash models read `VmRSS:` from `/proc/<pid>/status` and matched `ps` 3/3.
+- **Mechanical churn → coder**: no thinking, 77 t/s, 3.4× the per-token speed.
+- **A flash turn pays thinking time** (~2048 reasoning tokens, preserved into `content`), so a client
+  `max_tokens` must sit well above the reasoning budget or the answer never arrives.
+- **Never drive two local models at once**: llama-swap serves one model at a time, so parallel
+  requests for *different* models only buy load/unload cycles (155–312 s per request, measured).
+- **omp delegation**: `sonic` → `@worker` (flash-next) does real tool work — verified `write` →
+  `bash` → `yield` with a matching sha256. `@smol` stays coder; `task`/`reviewer` stay on cloud.
+  Trust workers' artifacts, not their prose: that same probe claimed a trailing `\n` the file
+  does not have.
+
 ## Monitor / tips
 - GPU load: `amdgpu_top`
-- **Agents (omp/pi):** use non-thinking models (`qwen3-coder`). Thinking models burn the token
-  budget in tool loops — cap them with `--reasoning-budget` and raise the client's `max_tokens`
-  (see the traps under A).
+- **Agents (omp/pi):** thinking models work *if* their thinking is bounded — cap them with
+  `--reasoning-budget 2048` **and** raise the client's `max_tokens` well above that (see the traps
+  under A). Measured 2026-09-24: the flash pair beats `qwen3-coder` on every task tried, at ~3.4×
+  lower throughput — pick per task from the table above, and never run two models at once.
 - Quant guide: `Q4_K_M`/`UD-Q4_K_XL` default; bump to `Q5`/`Q6` for models under ~60 GB (plenty of RAM).
 - DeepSeek: use the cloud subscription, not local.

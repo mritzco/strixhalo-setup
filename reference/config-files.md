@@ -429,3 +429,80 @@ Read by earlyoom.service. Tuned from two pressure tests — see ch. 8.
 EARLYOOM_ARGS="-r 3600 -m 10 -s 25 --sort-by-rss --avoid '^(niri|sddm|pipewire|pipewire-pulse|wireplumber|sshd|systemd|dbus-broker)$'"
 ```
 
+## Local model routing (ch. 5, applied 2026-09-24)
+
+Two omp files decide which model does what. Both were changed after the measured comparison in
+[ch. 5](../05-local-ai.md) — `qwen3-coder` is no longer the quality pick, and llama-swap serves one
+model at a time.
+
+### ~/.omp/agent/models.yml
+
+New file. Pins the discovered local models to the truth of their server: every llama-swap cmd runs
+`-c 131072`, and only processes launched with `--mmproj` accept images. Two discovery defects this
+corrects — a 1M context belief (omp would compact at ~8× the real window and only learn from
+`request (N tokens) exceeds the available context size`) and *inverted* image capability
+(`qwen3.8-flash-next` has no projector; `qwen3.8-flash-uncensored` has one).
+
+[WARN] Declaring `lm-studio` explicitly replaces omp's implicit *discoverable* provider, so the
+`discovery` block is required — without it the provider silently has zero models.
+
+```yaml
+# ~/.omp/agent/models.yml — truth-pinning for the local llama-swap models.
+providers:
+  lm-studio:
+    baseUrl: http://127.0.0.1:1234/v1
+    auth: none
+    api: openai-completions
+    discovery:
+      type: openai-models-list
+    modelOverrides:
+      qwen3-coder:
+        contextWindow: 131072
+        input: [text]
+      qwen3-vl:
+        contextWindow: 131072
+        input: [text, image]
+      qwen3.8-27b-vl:
+        contextWindow: 131072
+        input: [text, image]
+      qwen3.8-flash-next:
+        contextWindow: 131072
+        input: [text]
+      qwen3.8-flash-uncensored:
+        contextWindow: 131072
+        input: [text, image]
+```
+
+Verify with `omp models find qwen` — the lm-studio table must show `131K` everywhere and
+`images: yes` only for `qwen3-vl`, `qwen3.8-27b-vl`, `qwen3.8-flash-uncensored`.
+
+### ~/.omp/agent/config.yml
+
+`worker`/`worker2` exist so the local worker model is one line to retarget; `sonic` (bundled
+"mechanical updates / data collection" agent) is routed to it. `tiny`/`memory`/`judge` moved to the
+on-device ONNX models so background titles and typed judgments stop swapping the llama-swap model out
+from under a running agent.
+
+```yaml
+setupVersion: 2
+modelRoles:
+  smol: lm-studio/qwen3-coder
+  worker: lm-studio/qwen3.8-flash-next
+  worker2: lm-studio/qwen3.8-flash-uncensored
+  tiny: local/lfm2.5-230m
+  memory: local/lfm2-1.2b
+  judge: local/lfm2-1.2b
+  plan: deepseek/deepseek-v4-flash
+  advisor: deepseek/deepseek-v4-flash
+  vision: lm-studio/qwen3-vl
+  default: deepseek/deepseek-v4-flash
+defaultThinkingLevel: auto
+providers:
+  streamFirstEventTimeoutSeconds: 180
+task:
+  agentModelOverrides:
+    sonic: "@worker"
+composer:
+  shape: claude
+```
+

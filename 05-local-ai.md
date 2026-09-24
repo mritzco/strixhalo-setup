@@ -418,3 +418,73 @@ With the endpoint up, **omp requests `qwen3-coder` within seconds** — llama-sw
 logs `POST /v1/chat/completions ... "omp/18.1.14"`, load 5.8 s. "Nothing
 resident" therefore also means the client is not asking; llama-swap itself now
 loads nothing on start, but that is not the whole story.
+
+## 2026-09-24 — which local model for coding, measured; and the omp worker wiring
+
+Three objectively-scored tasks (a spec-compliance function with 20 hidden cases, a 4-bug hunt, a
+runnable `/proc` script) plus sequential throughput. Harnesses in `~/model-eval/`
+(`eval.py`, `speed.py`, `vision.py`), raw responses in `~/model-eval/out/`.
+
+| | `qwen3-coder` | `qwen3.8-flash-next` | `…flash-uncensored` | `qwen3.8-27b-vl` |
+|---|---|---|---|---|
+| spec compliance (20 cases) | 19/20 | **20/20** | **20/20** | not measured¹ |
+| bug hunt (4 real bugs) | 3 | **4** | **4** | — |
+| runnable `/proc` script | ❌ | ✅ | ✅ | — |
+| throughput (400 tok, warm) | **77.0 t/s** | 22.5 t/s | 35.0 t/s | 7.4 t/s |
+| cold-ish load | 7.5 s | 20.5 s | 17.0 s | (warm) |
+
+¹ 27b-vl is dense Q8 at 7.4 t/s; a long structured answer needs ~18 min, so a 420 s client timeout
+returned nothing. That is a harness limit, not a model verdict — but it *is* the verdict on using it
+as a worker (10× slower than coder). It stays a vision model.
+
+**The lineup rule changed.** "Use `qwen3-coder` for agents" was right when the alternative was GLM
+(unparseable tool-call stream). With the reasoning budget capped it is no longer the quality pick:
+coder lost all three tasks. Its T1 miss is real (`"1H30M"` → `ValueError`, no case folding), and its
+`/proc` script contains two genuine bugs — it whitespace-splits `/proc/<pid>/stat`, so a `comm`
+containing a space shifts the field index (it printed an 11 TB RSS, `Privileged Cont`), and it prints
+KB labelled MB. Both flash models read `VmRSS:` from `/proc/<pid>/status`, tolerate vanished PIDs,
+fall back `comm` → `cmdline`, and matched `ps` 3/3.
+
+**They are careful, not fast.** Every turn spends the 2048-token reasoning budget (preserved into
+`content`), so equal output costs ~1.5–2× the wall clock and ~3.4× per token. Mechanical churn →
+coder; anything where a wrong edit costs a rerun → flash.
+
+**Their failure mode is the client's**, twice over: run 1 scored both flash models **0/20** only
+because a 1600-token client cap was consumed by thinking (`finish=length`) — the same trap as the
+Playground `max_tokens: 4096` above, reproduced by the harness that documented it. Re-run at 8000:
+20/20. Any client driving these models needs a cap well above the thinking budget.
+
+**Vision** (generated image, checkable JSON: digits / largest / count — `vision.py`): all three
+VL-capable models returned exact ground truth; `qwen3-vl` 9.9 s, `flash-uncensored` 24.2 s,
+`27b-vl` 33.9 s (end-to-end incl. load). Proves capability, not a ranking — the image was easy.
+
+**Tool loop verified for omp.** `sonic` routed to `@worker` (flash-next) ran `write` → `bash` →
+`yield` in 6m12s; the sha256 it reported matched the file exactly (15 bytes, no trailing newline).
+The cost is latency, not correctness — and its prose claimed a `\n` the file does not have, so:
+**verify the artifacts, not the summary.**
+
+### Running two local models at once is never right here
+
+llama-swap's default with no `groups:` is *single model at a time* — a request for another model
+stops the one running (this file already noted the coder preload being "swapped straight out by the
+first vision request"). A 3-model parallel evaluation therefore measured 155–312 s per request and
+2–10 t/s: every request paid a load/unload. `speed.py` is sequential for exactly this reason.
+`flash-next` is a 125B-A6B at UD-IQ4_XS holding ~65 GB in GTT, so coexistence was never on the table.
+
+The same fact makes background housekeeping expensive: a session-title or typed-judgment request
+mid-run swaps the working model out. `modelRoles.tiny`/`judge` (and `memory`) now point at the
+on-device ONNX tiny models — no llama-swap involved, and ~90 ms per title instead of a reload.
+
+### omp wiring applied 2026-09-24
+
+- `~/.omp/agent/models.yml` (**new**): pins the local models to the server's truth — every cmd runs
+  `-c 131072`, and only `--mmproj` processes accept images. Discovery had synthesized 1M context
+  (omp would compact at ~8× the real window and only learn from a server error:
+  `request (N tokens) exceeds the available context size`) and had image capability *inverted*
+  (`images: yes` for flash-next, which has no projector; `no` for `flash-uncensored`, which has one).
+  Declaring `lm-studio` explicitly replaces the implicit discoverable provider, so its `discovery`
+  block must be spelled out or the provider ends up with zero models.
+- `~/.omp/agent/config.yml`: `worker`/`worker2` role aliases plus
+  `task.agentModelOverrides.sonic: "@worker"` — bundled agent prompt, local model, no hand-written
+  agent file needed (backup: `config.yml.bak-20260924-local-workers`).
+- Contents of both files: [reference/config-files.md](reference/config-files.md#local-model-routing-ch-5-applied-2026-09-24).
