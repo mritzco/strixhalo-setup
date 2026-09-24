@@ -43,6 +43,7 @@ is dated, and history doesn't get rewritten. Current-state material lives in
 
 Current state, safe to overwrite:
 
+- [cheatsheet.md](reference/cheatsheet.md) — **every command worth remembering**, grouped by task
 - [config-files.md](reference/config-files.md) — contents of every config file touched
 - [llm-usage.md](reference/llm-usage.md) — running local LLMs day to day
 - [vision-usage.md](reference/vision-usage.md) — asking questions about an image day to day
