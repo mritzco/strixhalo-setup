@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-07 · **Status:** ✅ WORKING, with characterised limitations
 
-[← Resilience](08-resilience.md) · [Setup index](README.md)
+[← Resilience](08-resilience.md) · [Setup index](README.md) · [Next: Crash forensics →](10-crash-forensics.md)
 
 ---
 

@@ -16,7 +16,7 @@ is dated, and history doesn't get rewritten. Current-state material lives in
 | **Memory** | 128 GB unified · VRAM 512 MB + GTT ~110 GB |
 | **Swap** | zram 124.9 GB (compressed RAM — see [ch. 8](08-resilience.md)) |
 | **Storage** | 950 GB btrfs on LUKS |
-| **OS** | CachyOS (Arch-based) · kernel `linux-cachyos-px13` |
+| **OS** | CachyOS (Arch-based) · kernel `linux-cachyos` 7.2.3 · `linux-cachyos-px13` still installed as fallback entry |
 | **Desktop** | niri (Wayland) · sddm · Noctalia shell |
 | **Shell** | fish |
 | **Keyboard** | Japanese physical layout, US keymap + kanata remap |
@@ -28,7 +28,7 @@ is dated, and history doesn't get rewritten. Current-state material lives in
 | # | Chapter | Date | Status |
 |---|---|---|---|
 | 1 | [Base system](01-base-system.md) — packages, configs, system changes | 2026-07-11 | ✅ |
-| 2 | [Audio](02-audio.md) — TAS2783 speakers, px13 kernel | 2026-07-12 | ✅ |
+| 2 | [Audio](02-audio.md) — TAS2783 speakers: px13 kernel (2026-07-12) → stock kernel + DKMS module (2026-09-24) | 2026-07-12 | ✅ |
 | 3 | [Keyboard](03-keyboard.md) — JP remap via kanata, power & battery | 2026-07-11 | ✅ |
 | 4 | [Display rotation](04-display-rotation.md) — convertible tablet/tent | 2026-07-19 | ✅ |
 | 5 | [Local AI](05-local-ai.md) — GTT memory, Vulkan, llama.cpp, llama-swap | 2026-07-15 | ✅ |
@@ -36,6 +36,7 @@ is dated, and history doesn't get rewritten. Current-state material lives in
 | 7 | [Apps & viewers](07-apps-viewers.md) — calculator, image, 360° | 2026-08-01 | ✅ |
 | 8 | [Resilience](08-resilience.md) — OOM hardening | — | ⚠️ **proposed, not applied** |
 | 9 | [DeepSeek-OCR](09-deepseek-ocr.md) — vLLM on ROCm/gfx1151 | 2026-08-07 | ✅ working, limits documented · `dspdf` front door added 2026-09-13 |
+| 10 | [Crash forensics](10-crash-forensics.md) — silent resets: crashwatch, panic/lockup capture | 2026-09-24 | ✅ capture stack installed, no recurrence yet |
 
 ## Reference
 
