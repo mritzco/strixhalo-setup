@@ -446,6 +446,11 @@ corrects — a 1M context belief (omp would compact at ~8× the real window and 
 [WARN] Declaring `lm-studio` explicitly replaces omp's implicit *discoverable* provider, so the
 `discovery` block is required — without it the provider silently has zero models.
 
+[WARN] Pinning `baseUrl` here also means **`LM_STUDIO_BASE_URL` stops applying** — the explicit
+provider wins over the implicit env-driven one. Move the daemon's port and you must edit this file,
+not the environment. (Found 2026-09-24 while testing the fallback path: a probe run with
+`LM_STUDIO_BASE_URL=http://127.0.0.1:9/v1` still answered, because the request went to 1234.)
+
 ```yaml
 # ~/.omp/agent/models.yml — truth-pinning for the local llama-swap models.
 providers:
@@ -499,6 +504,18 @@ modelRoles:
 defaultThinkingLevel: auto
 providers:
   streamFirstEventTimeoutSeconds: 180
+# Local models are opt-in: if llama-swap is not running (or its endpoint moved), these
+# chains walk to cloud instead of retrying into a failure. `retry.modelFallback` is on
+# by default. Verified 2026-09-24: a model pinned at a dead endpoint with NO chain
+# stalls (retries, no answer); with the chain it answers from the fallback.
+retry:
+  fallbackChains:
+    worker:
+      - deepseek/deepseek-v4-flash
+    worker2:
+      - deepseek/deepseek-v4-flash
+    default:
+      - deepseek/deepseek-v4-flash
 task:
   agentModelOverrides:
     sonic: "@worker"

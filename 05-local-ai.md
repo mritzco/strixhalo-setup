@@ -502,3 +502,12 @@ on-device ONNX tiny models — no llama-swap involved, and ~90 ms per title inst
   `One or more tiny title models failed to download` leaving a 4.7 MB partial; an immediate retry
   fetched the full 207 MB (`onnx/model_q4.onnx` + `model_q4.onnx_data`). Verify the cache, not the
   exit message.
+
+**Local models are opt-in, and their absence now degrades to cloud (2026-09-24).** A default session
+touches no llama-swap at all: `default`/`smol`/`plan`/`advisor` are cloud, and `tiny`/`memory`/`judge`
+are on-device ONNX (0.26 s, no GPU, unaffected by the daemon). Only `worker`/`worker2` (what `sonic`
+resolves to) and `vision` need it — so **`omp` alone is a complete session**, and `llmswap -d && omp`
+is what adds local work. Measured with a model pinned at a dead endpoint: **without**
+`retry.fallbackChains` the call retries and never answers; **with** the chain it answers from the
+fallback (same prompt → `OK`). Chains are in `config.yml` (backup `config.yml.bak-20260924-fallbacks`);
+the endpoint is pinned in `models.yml`, which is also why `LM_STUDIO_BASE_URL` is now inert.
