@@ -488,3 +488,17 @@ on-device ONNX tiny models — no llama-swap involved, and ~90 ms per title inst
   `task.agentModelOverrides.sonic: "@worker"` — bundled agent prompt, local model, no hand-written
   agent file needed (backup: `config.yml.bak-20260924-local-workers`).
 - Contents of both files: [reference/config-files.md](reference/config-files.md#local-model-routing-ch-5-applied-2026-09-24).
+
+**Verified after wiring, not assumed:**
+
+- `judge()` (typed Eval judgment) answers in **0.26 s** with **zero** new requests in llama-swap's
+  `/logs` (34 → 34 POSTs) — the `judge` role is really on-device. Both workers are up:
+  `~/.omp/run/tiny/lfm2-1.2b-onnx.sock` and `lfm2.5-230m-onnx.sock`, each logging
+  `omp tiny worker listening on …`.
+- Why that matters, measured: the last llama-swap-served **session title** cost **3m47s** of wall
+  clock (`title-generator: start 19:59:49` → `success 20:03:36`, `model: lm-studio/qwen3-coder`,
+  337-token prompt) because it queued behind model loads and swaps. On-device judgment is 0.26 s.
+- **[WARN] `omp tiny-models download lfm2.5-230m` fails transiently.** First attempt died with
+  `One or more tiny title models failed to download` leaving a 4.7 MB partial; an immediate retry
+  fetched the full 207 MB (`onnx/model_q4.onnx` + `model_q4.onnx_data`). Verify the cache, not the
+  exit message.
