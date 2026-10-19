@@ -68,16 +68,29 @@ sudo systemctl restart earlyoom                                  # after a swap-
 sudo bash ~/crash-forensics/oom-hardening/install.sh --revert    # undo the hardening
 ```
 
+## Noctalia v5 shell — [ch. 12](../12-resume-freeze-upgrade-noctalia-v5.md)
+
+```fish
+noctalia msg status                                    # running? which panel is open?
+noctalia config validate                               # check ~/.config/noctalia/config.toml (hot-reloads on save)
+pkill -x noctalia; niri msg action spawn -- noctalia   # restart (fixes "read() failed: Resource temporarily unavailable")
+noctalia msg panel-toggle launcher                     # also Mod+CTRL+Return
+noctalia msg settings-toggle                           # settings window
+noctalia msg plugins list | grep enabled
+noctalia msg plugins enable <author>/<plugin>
+noctalia config export                                 # effective config as TOML (incl. GUI overrides)
+```
+
 ## Session lock — [ch. 11](11-session-lock.md)
 
 ```fish
-qs -c noctalia-shell ipc call lockScreen lock          # lock now (also Mod+ALT+L)
+noctalia msg session lock                              # lock now (also Mod+ALT+L)
 pgrep -a swayidle                                      # is the suspend hook running?
 niri msg action spawn-sh -- "swayidle -w before-sleep /home/itzco/.config/niri/scripts/lock-before-sleep.sh"
 systemctl suspend                                      # test: waking must land on the lock screen
 loginctl show-session $XDG_SESSION_ID -p LockedHint     # "yes" while locked
 
-# notification audit: what talks to your desktop, and from which app
+# notification audit (v4 cache path; v5 may store history elsewhere)
 python3 -c "import json;d=json.load(open('/home/itzco/.cache/noctalia/notifications.json'));i=d if isinstance(d,list) else d.get('notifications',[]);[print(n.get('appName'),'|',n.get('summary')) for n in i[-20:]]"
 ```
 

@@ -104,3 +104,19 @@ The dead boot had **27 `page allocation failure` events**, zram sized to `ram` (
 - `~/crash-forensics/RESTART-CHECKLIST.md` — the operational runbook
 - [ch. 2](02-audio.md) — the audio migration done in the same session
 - [ch. 8](08-resilience.md) — OOM hardening (**still not applied**)
+
+## Update — 2026-10-19: second event (resume freeze)
+
+A **freeze** after resuming from s2idle, not a reset. The machine didn't reboot itself even with
+`hardlockup_panic=1 panic=10` armed, and forensics found nothing (no pstore/BERT/MCE/SMART errors).
+Likely trigger: niri's power-key suspend loop. Full timeline and fix in
+[ch. 12](12-resume-freeze-upgrade-noctalia-v5.md).
+
+Additions to the "Reading the next event" table:
+
+| Evidence | Conclusion |
+|---|---|
+| journal ends within seconds of a `PM: suspend exit`, no trace, no self-reboot | hang below the kernel's detectors (display/GPU/firmware on resume) |
+| `suspend requested from client … ('niri')` right after `Power key pressed short` | niri power-key loop (fixed with `disable-power-key-handling`) |
+
+⚠️ `rasdaemon` isn't in the official repos (`error: target not found`). It's AUR: `yay -S rasdaemon`.

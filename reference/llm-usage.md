@@ -5,10 +5,10 @@
 Quick reference for running local text models on the PX13 (Strix Halo, Radeon 8060S, Vulkan).
 Setup details live in [setup/05-local-ai.md](../05-local-ai.md). **Always use `127.0.0.1`, never `localhost`.**
 
-## Three ways to run
+## Four ways to run
 
 ### A. llama-swap — everyday driver (recommended)
-One endpoint, all models, auto-loads/swaps on request. **It now starts with nothing loaded.**
+One endpoint, both models, auto-loads/swaps on request. **It now starts with nothing loaded.**
 ```fish
 llmswap                    # foreground: serves http://127.0.0.1:1234/v1 (Ctrl-C to stop)
 llmswap -d                 # detached: own session, returns once it answers, logs to
@@ -23,10 +23,11 @@ llmswap -d -p qwen3-vl     # combine freely
   `~/.config/fish/functions/llmswap.fish` ([contents](config-files.md)); startup preload in
   `config.yaml` is deliberately `preload: []` so it can't override the flag.
 - Built-in playground + model list: open `http://127.0.0.1:1234` in a browser.
-- Models: `qwen3-coder` (coding/agents), `qwen3-vl` (fast vision), `qwen3.8-27b-vl` (dense
-  vision), `qwen3.8-flash-next` (strongest, thinking, `--reasoning-budget 2048`),
-  `qwen3.8-flash-uncensored` (MTP fork on the custom Vulkan build, budget 2048 since 2026-09-24).
+- Models: exactly two — `qwen3-coder` (coding/agents, on demand) and `qwen3-vl` (fast vision).
   The file is the truth: `~/.config/llama-swap/config.yaml` ([contents](config-files.md)).
+  ⚠️ **Pruned 2026-10-03:** `qwen3.8-flash-next`, `qwen3.8-flash-uncensored` and `qwen3.8-27b-vl`
+  moved to the halogen container — section D. Both llama.cpp source forks retired with the flash
+  rows (only `flash-uncensored` used the myhacsint build).
 - `/running` lists what's loaded · `POST /api/models/unload` frees the model(s) now · the
   config's `ttl: 1800` unloads them after 30 min idle anyway.
 - Editing `config.yaml`: reload in place with `pkill -HUP -f 'llama-swap --config'` (llama-swap also
@@ -35,6 +36,10 @@ llmswap -d -p qwen3-vl     # combine freely
   request pays the load again. `llmswap -d` against a live instance only says "already running".
 
 #### ⚠️ Two traps we hit (2026-09-24)
+
+> **History:** both traps were diagnosed on the flash rows, since pruned 2026-10-03 (section D).
+> The lessons are endpoint-agnostic — any thinking model and any client still need a `max_tokens`
+> well above the reasoning budget — so the numbers below stay as measured evidence.
 
 **"The model stopped mid-thinking"** — that is a *client* output cap, not a crash. The Playground UI
 (and most OpenAI clients) default to `max_tokens: 4096`; a thinking model with **no reasoning budget**
@@ -45,7 +50,8 @@ context was nowhere near full, and the process stayed up (it exited later on the
 Do both fixes:
 
 ```yaml
-# ~/.config/llama-swap/config.yaml — bound the thinking so the answer always has room
+# ~/.config/llama-swap/config.yaml — HISTORICAL row (the flash models are pruned; keep the pattern
+# for any thinking model you add back). Bound the thinking so the answer always has room
 # (llama.cpp default is --reasoning-budget -1 = unlimited, which is the trap)
     cmd: ... --reasoning-effort medium --reasoning-preserve --reasoning-budget 2048 ...
 ```
@@ -64,8 +70,10 @@ fully" on the same conversation while `qwen3.8-flash-uncensored` (no budget) cut
 *client-side* abort. `dial tcp 127.0.0.1:5800: connection refused` is llama-swap proxying to a backend
 that is unloaded/starting (TTL eviction) — noise, not a fault.
 
-**Resident models add up.** There is no `groups:` block, so every requested model stays loaded until
-its `ttl: 1800` expires — five models × 15–70 GB on a 128 GB box. Under real pressure the new
+**Resident models add up.** Pruning cut this endpoint to two models (2026-10-03), but there is still
+no `groups:` block, so every requested model stays loaded until its `ttl: 1800` expires. The real
+heavyweight is now the separate halogen stack (~90 GiB resident whenever it runs, section D) — two
+llama-swap models plus halogen will not fit comfortably on a 128 GB box. Under real pressure the new
 `earlyoom` policy kills the **largest RSS** process, which will be a resident model (see
 [ch. 8](../08-resilience.md)). A `groups:` section can make swapping deterministic — check
 llama-swap's docs for `exclusive` vs `swap` semantics before applying; they differ in whether models
@@ -78,8 +86,9 @@ llm coder            # one model on http://127.0.0.1:8080
 llm instruct 8081    # a second one on another port
 llm                  # prints the menu
 ```
-Keys: `coder`, `instruct`, `qwenvl|vl`, `flash`, `qwen-vl|qvl` (run `llm` for the menu + expected
-t/s). Don't run `llm` and `llmswap` on the same port.
+Keys: `coder`, `instruct`, `qwenvl|vl` only (run `llm` for the menu + expected t/s). `flash` and
+`qwen-vl|qvl` were removed 2026-10-03 — the Flash stack is the halogen container now (section D).
+Don't run `llm` and `llmswap` on the same port.
 
 ### C. `llmv` — one image + a question, no setup
 
@@ -88,14 +97,45 @@ llmv image.jpg "What is the total on this invoice?"
 ```
 
 Starts llama-swap on demand (detached) if needed, then answers: **7.8 s** on a cold machine,
-**2.1 s** warm. Model choice (`--model 3|3.8`), the resident-model knobs (`llmswap -p`), and the
+**2.1 s** warm. Serves `qwen3-vl` only: `--model` accepts `qwen3-vl` or the alias `3`; `--model 3.8`
+and the dense 27B model were removed 2026-10-03. The resident-model knobs (`llmswap -p`) and the
 two-residents gotcha: **[vision-usage.md](vision-usage.md)**.
 
+### D. `halogen` — the resident Flash stack (container, port 8731)
+
+A second, always-resident endpoint on `http://127.0.0.1:8731/v1`, started with the `halogen` fish
+function. It runs the `halogen-flash-server` container: **Flash-Next uncensored** (text, tools,
+131k context, prompt cache) + vision + five NPU models, as one trunk.
+
+```fish
+halogen               # start detached; waits until /health answers, then returns
+halogen -f            # foreground: engine log in this terminal, Ctrl-C stops it
+halogen -n            # GPU only: Flash + vision, no NPU models (no mlock)
+halogen --fetch       # also set HALOGEN_DOWNLOAD (fetch/verify weights; needs network)
+halogen stop          # stop the container and give the ~90 GiB back
+halogen status        # container + endpoint + fabric clock + memory, one screen
+halogen logs [-f]     # container log
+halogen restart       # stop then start with the same flags
+```
+
+- Model id `qwen3.8-flash-next-uncensored`; logs at `~/.cache/halogen.log`. Detached it survives
+  closing the terminal.
+- **No equivalent elsewhere on this box:** the NPU serves `/v1/embeddings`, `/v1/rerank` and
+  `/v1/moderations`, plus the chat-shaped `decider-0.8b` (classifier) and `qwen3.5-2b`
+  (generation). llama-swap cannot serve any of these.
+- **It is a "give it the machine" server:** ~90 GiB resident (plus ~8.6 GiB locked while the NPU is
+  on) — run `halogen stop` before heavy ComfyUI/video work ([comfyui-usage.md](comfyui-usage.md)).
+- Measured: **4.9 s** on the chapter-5 harness image (vision) and ~3× faster prefill than the
+  pruned llama-swap flash row; `halogen status` shows the live context and NPU state.
+
 ## Clients
-- **omp** → its **lm-studio** provider auto-finds llama-swap at `127.0.0.1:1234`. Models show under "lm-studio".
-- **pi** → `/model` picker → the `local` provider (`~/.pi/agent/models.json` points at 1234).
-- **Open WebUI / any OpenAI app** → base URL `http://127.0.0.1:1234/v1`, any API key.
-- Endpoint speaks the **OpenAI API** (`/v1/chat/completions`, `/v1/models`).
+Two local provider entries exist now; start the endpoint before selecting it.
+- **omp** → **lm-studio** provider auto-finds llama-swap at `127.0.0.1:1234`; a second **halogen**
+  provider points at `127.0.0.1:8731` (run `halogen` first). `worker`/`worker2` use
+  `halogen/qwen3.8-flash-next-uncensored`, `vision` uses `lm-studio/qwen3-vl` (truth: `~/.omp/agent/models.yml`).
+- **pi** → `/model` picker → `local` (1234) or `halogen` (8731) (`~/.pi/agent/models.json`).
+- **Open WebUI / any OpenAI app** → base URL `http://127.0.0.1:1234/v1` (or `:8731/v1` for halogen), any API key.
+- Both speak the **OpenAI API** (`/v1/chat/completions`, `/v1/models`).
 
 ## Getting models
 Downloads cache to `~/.cache/huggingface/hub` (llama.cpp `-hf` reuses them).
@@ -115,6 +155,11 @@ hf cache prune                           # remove half-finished downloads
 
 ## Which local model for what (measured 2026-09-24)
 
+> **2026-10-03 — the flash and 27b columns are history.** `qwen3.8-flash-next`,
+> `…flash-uncensored` and `qwen3.8-27b-vl` were pruned from llama-swap and moved to the halogen
+> container (section D); only `qwen3-coder` and `qwen3-vl` remain here. Their current numbers live
+> in section D. The 2026-09-24 figures below are kept as measured evidence.
+
 Objective comparison — 20 hidden spec-compliance cases, a 4-bug hunt, a runnable `/proc` script —
 plus sequential throughput. Harnesses: `~/model-eval/eval.py`, `speed.py`, `vision.py`; raw
 responses in `~/model-eval/out/`.
@@ -131,7 +176,8 @@ responses in `~/model-eval/out/`.
 nothing. It is a *vision* model, not a worker: all three VL-capable models read a generated test
 image exactly (`vision.py`), `qwen3-vl` fastest at 9.9 s end-to-end.
 
-- **Careful work → a flash model, not coder.** Coder lost all three tasks: `"1H30M"` raised
+- **Careful work → a flash model, not coder** (the flash model now lives at halogen — section D).
+  Coder lost all three tasks: `"1H30M"` raised
   `ValueError` (no case folding), and its `/proc` script whitespace-split `/proc/<pid>/stat`
   (a `comm` with a space shifts the field index — it printed an 11 TB RSS) *and* printed KB as MB.
   Both flash models read `VmRSS:` from `/proc/<pid>/status` and matched `ps` 3/3.
@@ -140,16 +186,20 @@ image exactly (`vision.py`), `qwen3-vl` fastest at 9.9 s end-to-end.
   `max_tokens` must sit well above the reasoning budget or the answer never arrives.
 - **Never drive two local models at once**: llama-swap serves one model at a time, so parallel
   requests for *different* models only buy load/unload cycles (155–312 s per request, measured).
-- **omp delegation**: `sonic` → `@worker` (flash-next) does real tool work — verified `write` →
-  `bash` → `yield` with a matching sha256. `@smol` stays coder; `task`/`reviewer` stay on cloud.
-  Trust workers' artifacts, not their prose: that same probe claimed a trailing `\n` the file
-  does not have.
+  The halogen stack is a second resident (~90 GiB) on top of whatever llama-swap holds — stop one
+  before pushing the other.
+- **omp delegation** (measured 2026-09-24, then still on `lm-studio`): `sonic` → `@worker` does
+  real tool work — verified `write` → `bash` → `yield` with a matching sha256. Both local workers
+  point at `halogen/qwen3.8-flash-next-uncensored` now (section D), so `halogen` must be up first.
+  `@smol` stays coder; `task`/`reviewer` stay on cloud. Trust workers' artifacts, not their prose:
+  that same probe claimed a trailing `\n` the file does not have.
 
 ## Monitor / tips
 - GPU load: `amdgpu_top`
-- **Agents (omp/pi):** thinking models work *if* their thinking is bounded — cap them with
-  `--reasoning-budget 2048` **and** raise the client's `max_tokens` well above that (see the traps
-  under A). Measured 2026-09-24: the flash pair beats `qwen3-coder` on every task tried, at ~3.4×
-  lower throughput — pick per task from the table above, and never run two models at once.
+- **Agents (omp/pi):** thinking models work *if* their thinking is bounded — for a model you launch
+  yourself, cap it with `--reasoning-budget 2048` **and** raise the client's `max_tokens` well above
+  that (see the traps under A). Measured 2026-09-24: the flash pair beats `qwen3-coder` on every task
+  tried, at ~3.4× lower throughput. Today the local workers (`worker`/`worker2`) run on `halogen`
+  (section D) — start it first, and never run two heavy residents at once.
 - Quant guide: `Q4_K_M`/`UD-Q4_K_XL` default; bump to `Q5`/`Q6` for models under ~60 GB (plenty of RAM).
 - DeepSeek: use the cloud subscription, not local.

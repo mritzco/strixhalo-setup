@@ -511,3 +511,280 @@ is what adds local work. Measured with a model pinned at a dead endpoint: **with
 `retry.fallbackChains` the call retries and never answers; **with** the chain it answers from the
 fallback (same prompt → `OK`). Chains are in `config.yml` (backup `config.yml.bak-20260924-fallbacks`);
 the endpoint is pinned in `models.yml`, which is also why `LM_STUDIO_BASE_URL` is now inert.
+
+---
+
+## 2026-10-03 — halogen-flash-server 0.16.2 trialled (measured, NOT wired in)
+
+Third-party engine (`github.com/peonist-ai/halogen-flash-server`, ghcr image). gfx1151-only, and the
+engine is a **compiled binary under an EULA** (`LICENSE.md`) — run/benchmark/redistribute-unmodified,
+no source, so it is *not* a fork to patch the way Nathan's and myhacsint's are. Serves one model
+family (Qwen3.8-Flash-Next); optionally serves small models (embeddings, rerank, moderation,
+classifier, 2B generation) on the **NPU**. Trialled GPU-only against our existing `UD-IQ4_XS` GGUF
+through its 0.7.0+ "bring your own GGUF" path: 1.42 GiB draft head (`qwen38-flash-next-mtp.hgn`) +
+21 MB tokenizer, **no 110 GiB checkpoint download**.
+
+```fish
+podman run -d --name halogen -p 8731:8731 \
+  --device /dev/kfd --device /dev/dri --group-add keep-groups \
+  --ipc=host --ulimit memlock=-1:-1 \
+  -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next \
+  -e HALOGEN_CHECKPOINT=/models/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
+  -e HALOGEN_CTX=131072 -e HALOGEN_MAX_TOK=16384 -e HALOGEN_MAX_TOKENS_DEFAULT=16384 \
+  -e HALOGEN_MODEL_ID=qwen3.8-flash-next \
+  -v ~/halogen-models:/models \
+  ghcr.io/peonist-ai/halogen-flash-server:0.16.2
+```
+
+`~/halogen-models` holds hardlinks to the three GGUF shards (`ln -f`, same filesystem → no extra
+disk) and receives the draft head and tokenizer on first start. `HALOGEN_MAX_TOK` is the **prefill
+scratch** size (default 32768 ≈ 9 GB), not a token budget.
+
+**Measured here, same `UD-IQ4_XS` weights (`~/model-eval/halogen-ab.py`, `halogen-verify.py`):**
+
+| | fork+MTP (ours) | halogen 0.16.2 |
+|---|---|---|
+| prefill 8k / 32k | 320 → 383 t/s | **1268 / 1051 t/s** |
+| prefill, 97k prompt | — | 1029 t/s, 73.9 s |
+| decode, 400 tok, thinking off | — | 26.5 t/s (draft 186/212) |
+| decode, 967-tok turn, default thinking | 22.5 / 35.0 t/s (400-tok turns) | 32.8 t/s (709 reasoning) |
+| follow-up on 21.7k context | — | **2.1 s** (21,696 tok cached; exact repeat 0.94 s) |
+| tool loop: call → result → answer | GLM broke here | 3.7 s + 1.5 s, arguments valid JSON |
+
+Decode is comparable; **prefill is ~2.7–3.3×**, and that plus the prompt cache is what a 100k-context
+agent turn actually spends its time on. Caveat: our 22.5/35.0 were 400-token turns at temp 0.2 with
+`--reasoning-budget 2048`; halogen's 32.8 is a greedy 967-token turn. Not an identical prompt set.
+
+- **Boot:** GGUF repacked in 17.8 s (70.55 GiB), registered read-only (`device ptr == host ptr`).
+  Footprint **90.4 GiB** = 72.0 weights + 7.2 KV pool (262144 positions) + 11.3 working; the 26.8 GiB
+  lookup table is read from disk, not held. `/health` reported `context 131072`, cap 65536, engine and
+  API both 0.16.2.
+- **It holds the machine.** Only 22.6 GiB contiguous was left for the desktop, and `free`/`MemAvailable`
+  over-report by ~62–68 GiB (locked weights counted as reclaimable cache). Stopping returns all of it.
+- ⚠️ **Start-time fragmentation is the real gotcha.** The log warned of only 268 contiguous 2 MiB
+  blocks (536 MiB) *before* halogen allocated; while running, `/proc/buddyinfo` Normal fell to **5**
+  blocks. After stop it recovered to 4031. Before a restart, as root:
+  `echo 1 > /proc/sys/vm/compact_memory` and confirm `awk '/Normal/{print $14}' /proc/buddyinfo` is in
+  the thousands — the same contiguous-memory wedge as [08-resilience.md](08-resilience.md), and the
+  reason this must not be started on a loaded desktop.
+- Plumbing is llama-swap-friendly: `/metrics` carries `llamacpp:*` names and every response a
+  llama-server `timings` object. Also speaks `/v1/responses` (Codex) and `/v1/messages` (Claude Code),
+  structured output (greedy only), and lists as `qwen3.8-flash-next` at `/v1/models`.
+- **NPU left off, deliberately.** It needs host XRT (`xrt` + `xrt-plugin-amdxdna` — *absent* here) and
+  the GPU fabric clock held (`deploy/host/halogen-fabric-clock.service`), or GPU+NPU concurrency can
+  hang the machine. Note `amd_iommu=off` — our hardening lever for the GTT page-fault / session-drop
+  crashes — **turns the NPU off**; halogen's own published GPU numbers were measured *with* it off.
+- Its own MTP draft heads are required. Our unsloth/agentionai MTP GGUFs are refused; pointing
+  `HALOGEN_MTP_HEAD` at one is a hard start error.
+- Not in llama-swap, not in omp/pi `models.yml` — nothing in the running stack references 8731 yet.
+
+**2026-10-03 (later) — uncensored trunk, and the registry record.** Re-ran the same config on the
+uncensored IQ4_XS (`~/models/Qwen3.8-Flash-Next-Uncensored-GGUF/IQ4_XS/…`, 92 GB single file, read in
+place): prefill **1314 / 1092 t/s** @6.7k / 26.7k, decode **28.4 t/s** thinking-off (draft 176/192 =
+**91.7 % accepted** — halogen's own head transfers to the abliterated trunk fine) and **33.3 t/s** over
+a 1304-token thinking turn; tool call valid JSON in 4.5 s. Uniformly ~3–4 % ahead of `UD-IQ4_XS` on
+the same server (1268 / 1051 t/s, 26.5 / 32.8 t/s), because the 4-bit trunk reads less per token.
+Footprint **89.1 GiB** (69.0 weights + 7.2 KV + 12.9 working) — *less* than the 8-bit `UD-IQ4_XS`
+(90.4). This is the trunk to standardise on if any is.
+
+Registry: `recipes/qwen3.8-flash-next-uncensored-halogen/` v0.1.0, hash `ae1aef67`, `engine: other`,
+`launch.serving` carrying the container topology; two result records under
+`results/qwen3.8-flash-next-uncensored-halogen/ae1aef67…/` (one cache-on, one cache-off);
+`tools/validate.py` clean at 13 recipes / 20 results.
+
+**Two registry defects found** (written into the recipe's `failure_notes` / annotations, not worked
+around silently):
+
+1. `tools/analyze.py` derives a test's runner filename as `<id with - → _>.py` and **ignores the
+   definition's `runner` field**. `context-recall` therefore looks for `context_recall.py`, never
+   finds `tests/runners/context_needle.py`, and prints `[skip] no runner for context-recall` — every
+   recipe declaring it (including the committed `qwen3.8-flash-next-uncensored` v0.1.0) is silently
+   under-tested. Fix: resolve `runner` from `tests/definitions/<id>.json`.
+2. The throughput runner's `tokens_per_sec_pp` divides **total** prompt tokens by wall time, so any
+   prefix cache inflates it. Same recipe, same weights, only `HALOGEN_PROMPT_CACHE` differing:
+   **9514.6 t/s cached vs 976.6 t/s cold**, while the engine's own `timings.prompt_per_second` was
+   1092 t/s. `tokens_per_sec_tg` moves too (11.7 vs 5.6) because the runner reuses one ~11k-token
+   system prompt in every generation round, so the round is almost all prefill. **Benchmark this
+   server with `HALOGEN_PROMPT_CACHE=0`; serve it with the default (`2`).** llama-server caches
+   prefixes as well, so other records may be inflated the same way.
+
+**NPU is one `pacman` away** (needs root; `sudo` here wants a password):
+
+Staged, verified host files live in `~/halogen-npu-host/` (copied verbatim from the repo tag `v0.16.2`; you do
+not need a checkout). `xrt` + `xrt-plugin-amdxdna` are **installed** (1:2.21.75); the three `libxrt*.so.2` are in
+`/usr/lib`, and the KFD SVM bit is **SET** (`capability=671326848`, node gfx 110501) with
+`cwsr_size=19185664` = `ctl_stack_size + (simd_count/2)*479232` = `16384 + 40*479232` — both gfx1151 fixes present,
+so the engine's read-only mapping registration will work.
+
+```fish
+# 1. host files (staged from the v0.16.2 tag, reviewed: writes only pp_dpm_fclk +
+#    power_dpm_force_performance_level under /sys/class/drm/*/device, reversible with `release`)
+sudo install -m755 ~/halogen-npu-host/halogen-fabric-clock         /usr/local/sbin/
+sudo install -m644 ~/halogen-npu-host/halogen-fabric-clock.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now halogen-fabric-clock.service
+sudo halogen-fabric-clock status        # expect: /sys/class/drm/card1/device: held (manual); exit 0
+
+# 2. memlock — BLOCKER, proven 2026-10-03, and NOT fixable via limits.conf on a graphical session.
+#    The NPU locks its models' memory: ~8.58 GiB for all five. This box's limit is 8192 KiB (8 MiB),
+#    and a rootless container cannot raise it (podman clamps --ulimit memlock=-1:-1 silently):
+#      "this container may lock 8192 KiB of memory, and the NPU needs about 8997531 KiB"
+#
+#    WHY limits.conf DOES NOT WORK HERE (measured, not inferred):
+#      the shell runs under user@1000.service (logind session 3, Class=manager, Service=systemd-user).
+#      That unit is spawned by PID 1, NOT through a PAM session, so /etc/security/limits.d/ is never
+#      consulted for it. Evidence: systemctl show user@1000.service -p LimitMEMLOCK -> 8388608,
+#      systemctl show -p DefaultLimitMEMLOCK -> 8388608 (systemd's compiled-in default, cf.
+#      system.conf:73 "#DefaultLimitMEMLOCK=8M"), /proc/self/limits -> 8388608. Everything in the
+#      graphical session (niri, terminals, podman) inherits that. pam_limits IS in system-auth, so
+#      limits.conf still works for *TTY/login/su/sudo* paths — just not the user manager.
+#
+#    Ancestry, measured: niri (and therefore alacritty/fish/omp) has PPid 2671 = user@1000.service;
+#    omp -> fish -> alacritty -> 2671 -> 1, every one at 8388608. user@1000 SURVIVED a logout, so
+#    logging out cannot fix this — the user manager must be respawned with a new limit.
+#    Ceiling note: PID 1's own memlock is 16768991232 (15.6 GiB), so even if systemd clamps the
+#    requested infinity to its own hard limit, 15.6 GiB still exceeds the 8.58 GiB the NPU needs.
+#
+#    (a) zero-config, immediate: log in on a TTY (Ctrl-Alt-F3). VERIFIED PAM chain:
+#        /etc/pam.d/login -> system-local-login -> system-login -> system-auth -> pam_limits.
+#        So limits.conf below applies there and `ulimit -H -l` reads `unlimited`; start the
+#        container from that TTY. (sudo from the desktop does NOT help: pam_limits would look up
+#        ROOT in limits.conf, which has no root entry, so it inherits the session's 8 MiB.)
+#    (b) permanent, for the graphical session — a drop-in on the user manager, then reboot:
+sudo mkdir -p /etc/systemd/system/user@.service.d
+printf '[Service]\nLimitMEMLOCK=infinity\n' | sudo tee /etc/systemd/system/user@.service.d/50-memlock.conf
+sudo systemctl daemon-reload
+#    reboot (a plain logout may not respawn user@1000.service), then confirm: ulimit -H -l -> unlimited
+#
+#    /etc/security/limits.d/50-memlock.conf (itzco hard/soft memlock unlimited) is still worth
+#    keeping for the TTY/su/sudo paths:
+printf 'itzco hard memlock unlimited\nitzco soft memlock unlimited\n' | sudo tee /etc/security/limits.d/50-memlock.conf
+
+# 3. run line: add the NPU device, mount the host's XRT twice (Arch/CachyOS put it in /usr/lib,
+#    and those libs look each other up at their own path), and name the models
+#   --device /dev/accel/accel0
+#   -e HALOGEN_DOWNLOAD=peonist-ai/halogen-qwen3.8-flash-next   # also fetches the NPU repos
+#   -e HALOGEN_NPU_MODELS=decider-0.8b,qwen3-embedding-0.6b,qwen3-reranker-0.6b,qwen3guard-gen-0.6b,qwen3.5-2b
+#   and, instead of -v /opt/xilinx/xrt:/opt/xilinx/xrt:ro:
+#     L=/usr/lib; X=""
+#     for f in libxrt_coreutil.so.2 libxrt_core.so.2 libxrt_driver_xdna.so.2; do
+#       X="$X -v $(readlink -f $L/$f):/opt/xilinx/xrt/lib/${f}:ro -v $(readlink -f $L/$f):$L/${f}:ro"
+#     done
+#     podman run … $X …
+```
+
+**What the NPU start got right before it hit the memlock wall** (so the remaining setup is verified):
+the fabric-clock gate passed — `the GPU's fabric clock is held at its top speed (2000Mhz), so the NPU
+starts beside it`; `device /dev/accel/accel0 … driver amdxdna (the kernel's own), XRT … with its NPU
+plugin`; and all five model repos were fetched into `~/halogen-models/npu` (**8.1 GiB**, each file
+checksummed against the image's own record) so no re-download is needed.
+`decider-0.8b` 2.2G, `qwen3-embedding-0.6b` / `qwen3-reranker-0.6b` / `qwen3guard-gen-0.6b` 776M each,
+`qwen3.5-2b` 3.4G — the `.hnpw` files plus per-model `devices/u*.elf` NPU programs.
+
+Note the 8.58 GiB is **mlocked**, unlike the Flash weights: it cannot be swapped or reclaimed, so the
+full stack is ~99 GiB pinned.
+
+Undo: `sudo systemctl disable --now halogen-fabric-clock.service && sudo halogen-fabric-clock release`.
+
+The fabric clock is not optional: GPU and NPU work at once can hang this SoC while `fclk` changes.
+Arch/CachyOS XRT lives in `/usr/lib`, so mount the three libraries twice per `docs/NPU.md`
+(`L=/usr/lib`), not `-v /opt/xilinx/xrt`.
+
+**2026-10-03 (later still) — vision ON, verified on the abliterated trunk.** `qwen38-flash-next-vision.hgn`
+(0.84 GiB, from `peonist-ai/halogen-qwen3.8-flash-next`) + `HALOGEN_VISION_TOWER=1` resolves it next to the
+checkpoint, so no extra mount. This was the open risk — the tower is fitted to the *original* trunk and these
+weights are an abliterated requant — and it works unchanged: the ch.5 harness image reads exactly
+`{"digits": "4287", "largest_color": "red", "rect_count": 3}` in **4.9 s** (96 out-tokens, 29.7 t/s decode),
+the frame costing 2560 context tokens. Footprint 89.1 → **90.0 GiB** (+0.84 resident, +1.14 worst-case
+scratch), and that start saw **0 compaction stalls** during KV reservation.
+
+Recipe `v0.2.0`, hash `05ebcf80` (a new variant — `launch.command` is hash-relevant, so v0.1.0's two records
+stay valid under `ae1aef67`). Records now: 2 under `ae1aef67`, 2 under `05ebcf80`; `validate.py` clean at
+14 recipes / 22 results.
+
+**2026-10-03 (final) — the NPU works; all five models verified.** After the memlock drop-in + reboot
+(`ulimit -H -l` → `unlimited`, and the fabric-clock unit held 2000 MHz by itself at boot), the container
+started with `--device /dev/accel/accel0` + the doubled XRT mounts and all five models:
+
+```
+npu_api: decider-0.8b on the NPU engine at 127.0.0.1:8740 (contexts 4, queue 64)
+npu_api: qwen3-embedding-0.6b (embeddings) · qwen3-reranker-0.6b (rerank)
+npu_api: qwen3guard-gen-0.6b (moderation) · qwen3.5-2b (generation)
+startup: 0 compaction stalls (both steps)
+```
+
+Measured (`~/model-eval/halogen-npu.py`):
+
+| endpoint | result |
+|---|---|
+| `/v1/embeddings` | 1024-dim, unit norm; one 392-token text **107 ms**; 8-text batch 3,176 tok in 0.43 s = **7,465 tok/s** |
+| `/v1/rerank` | ordering sane: "needs amdxdna, XRT + NPU plugin, IOMMU" **0.0331** > `ls /dev/accel` 0.0019 > GPU 0.0004 > bananas 0.0000 (0.42 s) |
+| `/v1/moderations` | safe→`Safe 0.998`, unsafe→`Unsafe 0.998`, `flagged` correct (0.14 s) |
+| `decider-0.8b` | `"no"` p=**0.706** vs `yes` 0.294, one pass, **0.08 s** |
+| `qwen3.5-2b` | coherent summary, 0.91 s |
+| **GPU+NPU concurrency** | Flash alone **38.4 t/s** → with 29 NPU batches in parallel **33.5 t/s (−13 %)**; second run −8 %. No errors, no hang |
+
+This is capability the llama-swap stack has **no equivalent for** — nothing else here serves embeddings or
+rerank. That is the strongest argument for consolidating onto halogen.
+
+Recipe `v0.3.0`, hash printed at write time (new variant: the device, the XRT mounts and
+`HALOGEN_NPU_MODELS` all live in the hash-relevant `launch.command`). `validate.py` clean. Note the
+registry's `capabilities_confirmed` only models tools/mcp/vision, so the NPU capability set has no
+schema representation and lives in an annotation instead — worth a schema field if this sticks.
+
+**2026-10-03 — reclaim pass: 199 GB freed (677 → 478 GB used; 273 → 471 GB free).** Deleted only
+after confirming nothing live referenced each item (grep across llama-swap config, fish functions,
+omp models.yml/config.yml, pi models.json):
+
+| removed | size | why it was safe |
+|---|---|---|
+| `~/.cache/huggingface/hub/models--unsloth--GLM-4.5-Air-GGUF` | 64 G | dropped from the lineup 2026-09-07, no live reference; recipe kept in the registry. **Re-download required if wanted back.** |
+| `~/models/Qwen3.8-Flash-Next-GGUF` (stock `UD-IQ4_XS` + agentionai/unsloth MTP sidecars) | 98 G | superseded by the uncensored trunk; halogen refuses llama.cpp MTP GGUFs (it wants `.hgn`). Its 3 shards were also hardlinked into `~/halogen-models` — both copies removed (the hardlink kept the data alive otherwise). |
+| `~/models/Qwen3.8-27B-GGUF` | 29 G | dense 27B VL, pruned 2026-10-03; halogen's vision replaced it and is faster (4.9 s vs 33.9 s). |
+| `…/Qwen3.8-Flash-Next-Uncensored-GGUF/{MTP-unsloth,mmproj}` | 3.5 G | the engine refuses the first and ships its own vision sidecar, so the llama.cpp mmproj is unused. |
+| `~/src/nathan-llama.cpp`, `~/src/myhacsint-llama.cpp` | 8 G | both source forks retired with the flash rows; recipes live in the registry. |
+
+**Kept:** the 92 GB uncensored GGUF (the live checkpoint — the container mmaps it), `qwen38-flash-next-mtp.hgn`
++ `qwen38-flash-next-vision.hgn` + `tokenizer/` + `npu/` (8.1 G), and in the HF cache everything still
+reachable: `qwen3-coder` 17 G, `qwen3-vl` 18 G, `qwen3-instruct` 17 G (still the `llm instruct` key),
+DeepSeek-OCR 6.3 G. The server stayed healthy across all deletions (no file it needs was touched).
+
+**Unsloth Studio** (`~/.unsloth`, 7.8 G, own llama.cpp + whisper.cpp + 3 venvs) is unaffected and holds
+**no user references** to the pruned models — the only `glm-4.5` / `qwen3.8` hits are inside its shipped
+Python/JS model catalog. Its `studio.db` / `rag.db` / `auth.db` are clean.
+
+---
+
+## 2026-10-03 — `modelRoles.judge`: a halogen model is silently ignored (and the fallback is worse)
+
+Tested four `judge:` assignments against a 12-item scored set (6 intent-classification + 6 bool
+"safety" items, objective ground truth) driven through the eval `judge_batch` helper:
+
+| `judge:` | actually resolved to | score | notes |
+|---|---|---|---|
+| `local/lfm2-1.2b` (the incumbent) | itself | **8/12** | ~0.16 s/item, free |
+| `halogen/decider-0.8b` | **@tiny fallback** (`lfm2.5-230m`) | 6/12 | assignment ignored |
+| `halogen/qwen3.8-flash-next-uncensored` | **@tiny fallback** | 6/12 | assignment ignored |
+| `deepseek/deepseek-v4-flash` | itself | 6/6 on intent (0.84 s, $0.0001) | chat models DO work here |
+
+1. **A halogen chat model in `modelRoles.judge` is dropped silently.** Both halogen assignments
+   resolved to the `@tiny` fallback, and **zero** requests reached `:8731` — verified by diffing the
+   container log across the run (0 new lines). A cloud chat model works, so the limit is the custom
+   `auth: none` openai-completions provider, not chat models as a class. *(Cause not established — that
+   is an inference; the observation is not.)*
+2. **It degrades quietly.** The `@tiny` fallback is the 230M *title* model: it scored worst and produced
+   a degenerate all-`True` bool set — it called `rm -rf /var/lib/containers` **safe**. Nothing warned.
+   Treat any `modelRoles.judge` edit as unverified until the resolved model is read back.
+3. **Halogen serves neither judgment API path** — `POST /v1/systemone` and `/v1/decisions` are both 404
+   (it serves chat/completions/messages/models/moderations/rerank/responses/embeddings), so a
+   judge-kind model cannot be pointed at it either.
+4. **The decider is a weak safety judge even directly:** `rm -rf /var/lib/containers` → `"yes"` (safe)
+   at p=0.558, deterministically (greedy, repeatable). Its strength is *constrained* classification —
+   options supplied, prompt layout controlled, ~0.08 s on the NPU — not open judgment.
+5. **The incumbent judge is itself only 8/12**, and it got `dd if=/dev/zero of=/dev/nvme0n1` wrong in the
+   dangerous direction (said safe). If typed judgments ever gate anything with consequences,
+   `deepseek/deepseek-v4-flash` scored 6/6 at ~$0.000017 per judgment — but nothing used the flash
+   *judge* quality because the flash model cannot serve that role from halogen.
+
+Reverted to `local/lfm2-1.2b`; the baseline reproduced exactly (4/6, 1.09 s).
+
+

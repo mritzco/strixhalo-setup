@@ -11,7 +11,7 @@ Setup, model lineage and the fork notes: [05-local-ai.md](../05-local-ai.md).
 ```fish
 llmv image.jpg                                       # default question: "Is this image AI generated?"
 llmv image.jpg "What is the total on this invoice?"
-llmv --model 3 image.jpg "Is the signature real?"    # qwen3-vl (fast MoE) instead of the default 3.8
+llmv --model 3 image.jpg "Is the signature real?"    # `3` is just an alias for the only model, qwen3-vl
 ```
 
 Nothing needs to be running first: if port 1234 is down, `llmv` starts llama-swap itself,
@@ -19,8 +19,16 @@ detached. The answer goes to stdout, prefixed with the model id.
 
 | Flag | Default | Model | Notes |
 |---|---|---|---|
-| `--model 3` | | `qwen3-vl` | 30B-A3B MoE, ~18 G — fast, the right default for questions |
-| `--model 3.8` | ✅ | `qwen3.8-27b-vl` | dense 27B Q8, ~29 G — finer detail, ~10× slower per image |
+| *(none)* / `--model 3` | ✅ | `qwen3-vl` | 30B-A3B MoE, ~18 G — fast; the only model `llmv` serves |
+| ~~`--model 3.8`~~ | | ~~`qwen3.8-27b-vl`~~ | **removed 2026-10-03** — dense 27B Q8, ~29 G, ~10× slower per image; no longer served by llama-swap |
+
+`--model` now accepts only `qwen3-vl` or its alias `3`; any other value exits with an error that
+points at halogen.
+
+> **Higher-quality image description:** start `halogen` and point any client at
+> `http://127.0.0.1:8731/v1`. The Flash stack reads images, and is faster: **4.9 s** on the
+> chapter-5 harness image (exact ground truth). It is a ~90 GiB resident container — `halogen stop`
+> frees it, `halogen status` inspects it. Details: [llm-usage.md](llm-usage.md) §D.
 
 With **no image argument** `llmv` drops into interactive chat (`llama-mtmd-cli`).
 
@@ -31,15 +39,15 @@ Measured on a 1-page invoice scan, "cold" meaning nothing was running at all:
 
 | Path | 1st call | 2nd and later |
 |---|---|---|
-| `llmv --model 3` (MoE ~18 G) | **7.8 s** (including starting llama-swap) | **2.1 s** |
-| `llmv` (default 3.8, dense ~29 G) | 29.3 s | 23.0 s |
+| `llmv` (today's default and only model: `qwen3-vl`, MoE ~18 G) | **7.8 s** (including starting llama-swap) | **2.1 s** |
+| *(historical)* `llmv` (then-default 3.8, dense ~29 G) | 29.3 s | 23.0 s |
 | `llama-mtmd-cli` one-shot, no daemon at all | 10.0 s | ~10 s **every time** |
 
 - **The daemon costs nothing now.** With no startup preload, the first `llmv` call is *faster*
   than the no-daemon path (7.8 s vs 10.0 s), and every later one is ~4× faster.
-- **The default `3.8` stays slow even when warm (23 s).** That is dense-model image prefill, not
-  loading, so llama-swap cannot fix it. Use `--model 3` for quick questions; keep `3.8` for when
-  you want the better reading and can wait.
+- *(historical)* **The old default `3.8` stayed slow even when warm (23 s)** — dense-model image
+  prefill, not loading, so llama-swap could not fix it. The default is `3`/`qwen3-vl` now; for a
+  finer reading start `halogen` (above) instead of waiting on a dense local model.
 
 ## Which models are resident
 

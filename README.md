@@ -16,8 +16,8 @@ is dated, and history doesn't get rewritten. Current-state material lives in
 | **Memory** | 128 GB unified · VRAM 512 MB + GTT ~110 GB |
 | **Swap** | zram 124.9 GB (compressed RAM — see [ch. 8](08-resilience.md)) |
 | **Storage** | 950 GB btrfs on LUKS |
-| **OS** | CachyOS (Arch-based) · kernel `linux-cachyos` 7.2.3 · `linux-cachyos-px13` still installed as fallback entry |
-| **Desktop** | niri (Wayland) · sddm · Noctalia shell |
+| **OS** | CachyOS (Arch-based) · kernel `linux-cachyos` 7.2.10 · `linux-cachyos-px13` still installed as fallback entry |
+| **Desktop** | niri (Wayland) · sddm · Noctalia **v5** (native, `noctalia`; v4 Quickshell retired 2026-10-19) |
 | **Shell** | fish |
 | **Keyboard** | Japanese physical layout, US keymap + kanata remap |
 
@@ -38,6 +38,7 @@ is dated, and history doesn't get rewritten. Current-state material lives in
 | 9 | [DeepSeek-OCR](09-deepseek-ocr.md) — vLLM on ROCm/gfx1151 | 2026-08-07 | ✅ working, limits documented · `dspdf` front door added 2026-09-13 |
 | 10 | [Crash forensics](10-crash-forensics.md) — silent resets: crashwatch, panic/lockup capture | 2026-09-24 | ✅ capture stack installed, no recurrence yet |
 | 11 | [Session lock](11-session-lock.md) — lock on suspend, and the "ads" that were a browser extension | 2026-09-24 | ✅ verified over a suspend/resume |
+| 12 | [Resume freeze → upgrade → Noctalia v5](12-resume-freeze-upgrade-noctalia-v5.md) — power-key resume loop, 570-pkg upgrade, v4→v5 shell migration | 2026-10-19 | ✅ desktop + audio · ⏳ freeze not reproduced |
 
 ## Reference
 

@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-24 · **Status:** ✅ working (verified over a real suspend/resume)
 
-[← Crash forensics](10-crash-forensics.md) · [Setup index](README.md)
+[← Crash forensics](10-crash-forensics.md) · [Setup index](README.md) · [Next: Resume freeze → Noctalia v5 →](12-resume-freeze-upgrade-noctalia-v5.md)
 
 ---
 
@@ -123,3 +123,16 @@ Manual locking (`Mod+ALT+L`) keeps working — it needs neither swayidle nor the
 - [reference/config-files.md](reference/config-files.md) — lock script + autostart contents
 - [ch. 2](02-audio.md) — audio: its resume hook restarts PipeWire, which costs browsers their mic
   until they are restarted
+
+## Update — 2026-10-19: Noctalia v5
+
+The shell is now Noctalia v5 ([ch. 12](12-resume-freeze-upgrade-noctalia-v5.md)), so the `qs … ipc call
+lockScreen lock` commands above are v4-only. The lock script and `Mod+ALT+L` now run:
+
+```sh
+noctalia msg session lock
+```
+
+⚠️ **Closing the lid with an external monitor connected doesn't lock.** logind treats the laptop as docked
+(`HandleLidSwitchDocked=ignore`), so nothing suspends and swayidle's `before-sleep` never fires. Test with the
+monitor unplugged, or `systemctl suspend`.
